@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "Taber",
+    "name": "TabTidy",
     "version": "1.0",
     "description": "A simple extension to help you manage your tabs",
     "background": {
