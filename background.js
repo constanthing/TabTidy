@@ -1,3 +1,8 @@
+/*
+Adds content.js to all tabs that are open at the time of installation.
+NOTICE: this is not dangerous, no data is being collected or sent to any server.
+*/
+
 chrome.runtime.onInstalled.addListener(() => {
     chrome.tabs.query({}, async function(tabs) {
         tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
@@ -17,7 +22,7 @@ chrome.runtime.onInstalled.addListener(() => {
                     Frame with ID 0 is showing error pag
                 Happens because a tab is displaying a Chrome error page, not a regular website.
                 Content scripts cannot run in these special pages. 
-                (Example of a tab that shows this error is a page that was attempted to be loaded with not internet connection)
+                (Example of a tab that shows this error is a page that was attempted to be loaded without internet connection)
                 */
                 console.log(tab.id);
                 console.error(error);

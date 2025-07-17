@@ -1,3 +1,7 @@
+/*
+On message received, get the source page of the tab and send it back in a response.
+*/
+
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.action == "get-source-page") {
         const sourcePage = document.documentElement.innerHTML;
@@ -5,5 +9,3 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
         return true;
     }
 })
-
-console.log("content.js loaded");
