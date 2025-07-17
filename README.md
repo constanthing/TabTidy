@@ -30,5 +30,21 @@
 - table headings sort functions:
     - descending
     - ascending
-    - unsort
-MORE ?
+- unsort
+- get rid of empty tables
+- get rid of window (for now )
+    - so comment it out
+    - at some point wants to rename the window
+        - to get specific tabs
+- search for recently closed windows
+    - own table down at the end with recently closed tabs (last week)
+- statistics page later
+- to do:
+    - repeat last search
+    - shows without organizing it by window (shows which last tabs were opened)
+    - within current window reverse order of most recently used
+        - tab currently is at the top anyway
+- hot key to open popup
+- duplicate tabs feature (shows duplicate tabs)
+- show indicator for currently opened tab
+- if search, keep search unless cleared 
