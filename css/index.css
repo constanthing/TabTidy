@@ -4,7 +4,8 @@
     box-sizing: border-box;
 }
 :root {
-    --white: rgb(218, 218, 218);
+    /* --white: rgb(218, 218, 218); */
+    --white: red;
 }
 html {
     font-size: 90%;
