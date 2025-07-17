@@ -1,3 +1,10 @@
+chrome.runtime.onStartup.addListener(() => {
+    // clear chrome storage local to reduce memory usage
+    chrome.storage.local.set({
+        "tabs": [],
+    })
+});
+
 /*
 Adds content.js to all tabs that are open at the time of installation.
 NOTICE: this is not dangerous, no data is being collected or sent to any server.
@@ -30,3 +37,24 @@ chrome.runtime.onInstalled.addListener(() => {
         }
     })
 });
+
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    console.log("onActivated", activeInfo);
+    const result = await chrome.storage.local.get("tabs");
+    console.log(result);
+    if (result) {
+        for (let i = 0; i < result.tabs.length; i++) {
+            let tab = result.tabs[i];
+            console.log("tab", tab);
+            if (tab.id == activeInfo.tabId) {
+                console.log("found tab", tab);
+                result.tabs[i].lastVisited = new Date().getTime();
+                console.log("updated tab", result.tabs[i]);
+                break;
+            }
+        }
+        chrome.storage.local.set({
+            "tabs": result.tabs
+        });
+    }
+})

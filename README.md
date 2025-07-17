@@ -48,3 +48,17 @@
 - duplicate tabs feature (shows duplicate tabs)
 - show indicator for currently opened tab
 - if search, keep search unless cleared 
+
+
+## Settings Page
+- Modify style
+    - theme (dark/bright)
+    - font size (for: general and table)
+- Table
+    - show / hide columns
+        - title (always on)
+        - last visited
+        - time spent
+    - group by (window)
+- Storage
+    - option to clear data stored for this application
