@@ -157,6 +157,7 @@ header {
 .tabs-table thead th {
     color: rgb(148, 148, 148);
     border-right: 1px solid rgb(64, 64, 64);
+    padding: 0;
 }
 .tabs-table thead th:last-child {
     border-right: none;
@@ -166,6 +167,11 @@ header {
     align-items: center;
     justify-content: space-between;
     gap: .5rem;
+    padding: .5rem 1rem;
+}
+.thead-title:hover {
+    background: rgb(60, 60, 60);
+    cursor: pointer;
 }
 .table-container table thead th.active {
     color: var(--white);
@@ -192,8 +198,14 @@ header {
     white-space: nowrap;
     max-width: 350px;
     width: 350px;
+    display: flex;
+    align-items: center;
+    gap: .2rem;
 }
-
+.tab-favicon {
+    width: 1rem;
+    height: 1rem;
+}
 
 button:hover {
     cursor: pointer;

@@ -1,70 +1,77 @@
 // default false (tabs are not grouped by windows)
 let SYSTEM_GROUP_BY_WINDOW = false; 
 
+// IndexedDB helper functions for popup.js
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open("taberDB", 1);
+        request.onupgradeneeded = function(event) {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains("tabs")) {
+                db.createObjectStore("tabs", { keyPath: "id" });
+            }
+            if (!db.objectStoreNames.contains("windows")) {
+                db.createObjectStore("windows", { keyPath: "windowId" });
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+async function getAllTabs() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("tabs", "readonly");
+        const req = tx.objectStore("tabs").getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = reject;
+    });
+}
+
+async function getAllWindows() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("windows", "readonly");
+        const req = tx.objectStore("windows").getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = reject;
+    });
+}
+
 class TabManager {
+    tables = {};
+    windows = {};
+    tabs = {};
+
     constructor() {
         return new Promise(async (resolve, reject) => {
-            // get tabs from chrome storage
-            const result = await chrome.storage.local.get("tabs");
-            if (result.hasOwnProperty("tabs")) {
-                console.log("Using tabs from chrome storage");
-                this.tabs = result["tabs"];
-            } else {
-                console.log("Creating empty tabs array in chrome storage");
-                this.tabs = [];
+            // get tabs from IndexedDB
+            const tabsArr = await getAllTabs();
+            this.tabs = {};
+            for (const tab of tabsArr) {
+                this.tabs[tab.id] = tab;
+            }
 
-                await this.saveTabs();
+            // get windows from IndexedDB
+            const windowsArr = await getAllWindows();
+            this.windows = {};
+            for (const win of windowsArr) {
+                this.windows[win.windowId] = win;
             }
 
             this.searchIndex = new Map();
-            this.windows = [];
             resolve(this);
         })
     }
 
-    addTab(tabInfo) {
-        // checking if tab already exists
-        let exists = false;
-        for (const storedTab of this.tabs) {
-            if (tabInfo.id == storedTab.id) {
-                tabInfo = storedTab; 
-                exists = true;
-                break;
-            }
-        }
-
-        const tab = {
-            id: String(tabInfo.id),
-            windowId: String(tabInfo.windowId),
-            url: tabInfo.url,
-            title: tabInfo.title,
-            // user has yet to visit the tab, so lastVisited is null
-            lastVisited: tabInfo.lastVisited ? tabInfo.lastVisited : null
-        };
-
-        if (!this.windows.includes(tabInfo.windowId)) {
-            this.windows.push(tabInfo.windowId);
-        }
-
-        if (!exists) {
-            // doesn't exist, add it to the array
-            this.tabs.push(tab);
-        }
-
-        this.clearSearchCache();
-        return tab;
-    }
-
-    saveTabs() {
-        return new Promise(async (resolve, reject) => {
-            await chrome.storage.local.set({
-                "tabs": this.tabs
-            });
-            resolve();
-        })
+    getTab(tabId) {
+        return this.tabs[tabId];
     }
 
     search(query, fields = ["title", "url", "windowId"]) {
+        if (query.length == 0) return Object.values(this.tabs);
+
         const cacheKey = `${query}-${fields.join(",")}`;
 
         // check cache
@@ -79,32 +86,59 @@ class TabManager {
         // if no query, return all tabs
         if (!normalizedQuery) return this.tabs;
 
-        const results = this.tabs.filter(tab => {
+        const results = Object.values(this.tabs).filter(tab => {
             return fields.some(field => {
-                const value = tab[field].toLowerCase();
-                return value.includes(normalizedQuery);
+                try {
+                    let value = tab[field].toLowerCase();
+                    return value.includes(normalizedQuery);
+                } catch(e) {
+                    console.log("Error searching for", field, "in", tab);
+                    return false;
+                }
             });
         });
+
 
         // cache results
         this.searchIndex.set(cacheKey, results);
         return results;
     }
 
+    sort(tabs, sortBy = "lastVisited", sortDescending = true) {
+        if (sortBy == "lastVisited") {
+            // Convert object to array
+            const tabsArray = Object.values(tabs);
+            
+            return tabsArray.sort((a, b) => {
+                // Handle null/undefined lastVisited
+                const aTime = a.lastVisited || 0;
+                const bTime = b.lastVisited || 0;
+
+                
+                return sortDescending ? bTime - aTime : aTime - bTime;
+            });
+        }
+
+        return tabs;
+    }
+
     hideShowTabs(results) {
+
+        results = this.sort(results);
+
         // show all windows (if grouped by windows)
         if (SYSTEM_GROUP_BY_WINDOW) {
-            for (const window of this.windows) {
-                const windowElement = document.querySelector(`[data-window-id="${window}"]`);
+            for (const windowId of Object.keys(this.windows)) {
+                const windowElement = document.querySelector(`[data-window-id="${windowId}"]`);
                 windowElement.classList.remove("hidden");
             }
         }
 
         // hide all tabs (so search just show the tabs that match)
-        for (const tab of this.tabs) {
+        for (const tabId of Object.keys(this.tabs)) {
+            const tab = this.tabs[tabId];
             try {
                 const tabElement = document.querySelector(`[data-tab-id="${tab.id}"]`);
-                console.log("tabElement", tabElement, tab.id);
                 tabElement.classList.remove("show");
                 tabElement.classList.add("hidden");
             } catch (e) {
@@ -114,7 +148,8 @@ class TabManager {
 
         // show the tabs that match the search
         for (const showTab of results) {
-            for (const tab of this.tabs) {
+            for (const tabId of Object.keys(this.tabs)) {
+                const tab = this.tabs[tabId];
                 try {
                     const tabElement = document.querySelector(`[data-tab-id="${tab.id}"]`);
 
@@ -130,9 +165,8 @@ class TabManager {
 
         // hide all windows (if grouped by windows)
         if (SYSTEM_GROUP_BY_WINDOW) {
-            console.log("this ran");
-            for (const window of this.windows) {
-                const windowElement = document.querySelector(`[data-window-id="${window}"]`);
+            for (const windowId of Object.keys(this.windows)) {
+                const windowElement = document.querySelector(`[data-window-id="${windowId}"]`);
                 if (!windowElement.querySelector(".show")) {
                     windowElement.classList.add("hidden");
                 }
@@ -142,15 +176,6 @@ class TabManager {
 
     clearSearchCache() {
         this.searchIndex.clear();
-    }
-
-    updateTab(tabId, data) {
-        console.log(data, tabId);
-        const tab = this.tabs.find(tab => tab.id == tabId);
-        if (!tab) return;
-        for (const key in data) {
-            tab[key] = data[key];
-        }
     }
 }
 
@@ -164,10 +189,16 @@ let tables = {
 
 const ungroupedTableId = "ungrouped-table";
 
-function createWindowTables(tab) {
+function createWindowTables(tabId) {
     return new Promise(async (resolve, reject) => {
         // returns existing tab if it exists, otherwise creates a new tab
-        tab = await tabManager.addTab(tab);
+        let tab = tabManager.getTab(tabId);
+
+
+        if (!tab) {
+            resolve();
+        }
+
 
         const windowId = tab.windowId;
 
@@ -208,7 +239,7 @@ function createWindowTables(tab) {
         row.dataset.tabId = tab.id;
         row.dataset.windowId = tab.windowId;
         row.innerHTML = `
-            <td class="tab-title">${tab.title}</td>
+            <td class="tab-title">${ tab.favIconUrl ? `<img src="${tab.favIconUrl}" class="tab-favicon" />` : "" } ${tab.title}</td>
             <td class="tab-last-visited">${tab.lastVisited ? new Date(tab.lastVisited).toLocaleString() : "--"}</td>
         `;
         tbody.appendChild(row);
@@ -216,15 +247,15 @@ function createWindowTables(tab) {
         resolve();
     })
 }
-function createUngroupedTable(tab) {
+function createUngroupedTable(tabId) {
     return new Promise(async (resolve, reject) => {
         // returns existing tab if it exists, otherwise creates a new tab
-        tab = await tabManager.addTab(tab);
+        let tab = tabManager.getTab(tabId);
+
 
         const tableExists = tables[ungroupedTableId];
 
         if (!tableExists) {
-            console.log("this ran");
             const table = document.createElement("table");
             table.classList.add("ungrouped-table");
             table.classList.add("tabs-table");
@@ -240,7 +271,6 @@ function createUngroupedTable(tab) {
             tabTablesContainer.appendChild(table);
 
             tables[ungroupedTableId] = table;
-            console.log(tables[ungroupedTableId]);
         }
 
         const table = tables[ungroupedTableId];
@@ -251,7 +281,7 @@ function createUngroupedTable(tab) {
         row.dataset.tabId = tab.id;
         row.dataset.windowId = tab.windowId;
         row.innerHTML = `
-            <td class="tab-title">${tab.title}</td> 
+            <td class="tab-title">${ tab.favIconUrl ? `<img src="${tab.favIconUrl}" class="tab-favicon" />` : "" } ${tab.title}</td> 
             <td class="tab-last-visited">${tab.lastVisited ? new Date(tab.lastVisited).toLocaleString() : "--"}</td>
         `;
         tbody.appendChild(row);
@@ -261,19 +291,17 @@ function createUngroupedTable(tab) {
 }
 
 function loadTabs() {
-    chrome.tabs.query({}, async function(tabs) {
-        // clear the tab tables container
-        tabTablesContainer.innerHTML = "";
-        
-        tabs.forEach(async function(tab) {
-            if (SYSTEM_GROUP_BY_WINDOW) {
-                await createWindowTables(tab);
-            } else {
-                await createUngroupedTable(tab);
-            }
-        });
+    // clear the tab tables container
+    tabTablesContainer.innerHTML = "";
 
-        await tabManager.saveTabs();
+    tabs = tabManager.sort(tabManager.tabs);
+    
+    tabs.forEach(async function(tab) {
+        if (SYSTEM_GROUP_BY_WINDOW) {
+            await createWindowTables(tab.id);
+        } else {
+            await createUngroupedTable(tab.id);
+        }
     });
 }
 
@@ -286,11 +314,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     tabManager = await new TabManager();
 
-    console.log("before", tabManager);
     // Initial Load of Tabs
     loadTabs();
 
-    console.log("after ", tabManager);
 
     const tabInfo = document.getElementById("tab-info");
     const tabInfoTabId = document.getElementById("tab-id");
@@ -305,7 +331,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     * Global Click Event Listener
     */
     document.addEventListener("click", function(e) {
-        console.log(e.target);
         if (e.target.classList.contains("tab-id")) {
             tabInfo.classList.add("active");
             contentDimmer.classList.add("active");
@@ -322,6 +347,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             tabInfoTitle.textContent = e.target.parentElement.querySelector(".tab-title").textContent;
             tabInfoUrl.textContent = e.target.parentElement.querySelector(".tab-url").textContent;
         } else if (e.target.parentElement.classList.contains("tab-row") || e.target.classList.contains("tab-row")) {
+            // if row in table is clicked, focus on the tab
             let target = e.target.parentElement.classList.contains("tab-row") ? e.target.parentElement : e.target;
             const tabId = parseInt(target.dataset.tabId);
             const windowId = parseInt(target.dataset.windowId);
