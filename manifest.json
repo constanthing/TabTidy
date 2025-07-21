@@ -4,13 +4,16 @@
     "version": "1.0",
     "description": "A simple extension to help you manage your tabs",
     "background": {
-        "service_worker": "background.js"
+        "service_worker": "background/background.js",
+        "type": "module"
+
     },
     "permissions": [
         "windows",
         "tabs",
         "scripting",
-        "storage"
+        "storage",
+        "sessions"
     ],
     "action": {
         "default_popup": "popup.html"
@@ -23,5 +26,21 @@
     ],
     "host_permissions": [
         "<all_urls>"
-    ]
+    ],
+    "commands": {
+        "_execute_action": {
+            "suggested_key": {
+                "default": "Alt+Shift+S",
+                "mac": "Command+Shift+S"
+            }, 
+            "description": "Open TabSentry"
+        },
+        "alternate-tab": {
+            "suggested_key": {
+                "default": "Alt+Shift+L",
+                "mac": "Command+Shift+L"
+            },
+            "description": "Alternate between last two open tabs"
+        }
+    }
 }

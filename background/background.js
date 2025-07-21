@@ -1,90 +1,4 @@
-// IndexedDB helper functions
-function openDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open("taberDB", 1);
-        request.onupgradeneeded = function(event) {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains("tabs")) {
-                db.createObjectStore("tabs", { keyPath: "id" });
-            }
-            if (!db.objectStoreNames.contains("windows")) {
-                db.createObjectStore("windows", { keyPath: "windowId" });
-            }
-        };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
-}
-
-async function saveTab(tab) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("tabs", "readwrite");
-        tx.objectStore("tabs").put(tab);
-        tx.oncomplete = resolve;
-        tx.onerror = reject;
-    });
-}
-
-async function getTab(tabId) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("tabs", "readonly");
-        const req = tx.objectStore("tabs").get(tabId);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = reject;
-    });
-}
-
-async function getAllTabs() {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("tabs", "readonly");
-        const req = tx.objectStore("tabs").getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = reject;
-    });
-}
-
-async function removeTabFromDB(tabId) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("tabs", "readwrite");
-        tx.objectStore("tabs").delete(tabId);
-        tx.oncomplete = resolve;
-        tx.onerror = reject;
-    });
-}
-
-async function saveWindow(windowObj) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("windows", "readwrite");
-        tx.objectStore("windows").put(windowObj);
-        tx.oncomplete = resolve;
-        tx.onerror = reject;
-    });
-}
-
-async function removeWindowFromDB(windowId) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("windows", "readwrite");
-        tx.objectStore("windows").delete(windowId);
-        tx.oncomplete = resolve;
-        tx.onerror = reject;
-    });
-}
-
-async function getAllWindows() {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("windows", "readonly");
-        const req = tx.objectStore("windows").getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = reject;
-    });
-}
+import { DB_VERSION, openDB, saveTab, getTab, getAllTabs, getLastTab, removeTabFromDB, addTabToClosedTabs, getClosedTab, getAllClosedTabs, removeFromClosedTabs, saveWindow, removeWindowFromDB, getAllWindows} from "./database.js";
 
 class TabManager {
     static NOT_FOUND = -1;
@@ -92,6 +6,7 @@ class TabManager {
     constructor() {}
 
     async addTab(tab, data = {}) {
+        console.log("addTab called with:", tab);
         let newTab = {
             index: tab.index,
             id: tab.id,
@@ -100,6 +15,7 @@ class TabManager {
             title: tab.title,
             favIconUrl: tab.favIconUrl,
             lastVisited: null,
+            sessionId: tab.sessionId,
             ...data
         };
         await saveTab(newTab);
@@ -122,7 +38,9 @@ class TabManager {
 
     async removeTab(tabId) {
         console.log("removeTab called with:", tabId);
-        await removeTabFromDB(tabId);
+        const removedTab = await removeTabFromDB(tabId);
+        console.log("removedTab", removedTab);
+        await addTabToClosedTabs(removedTab);
     }
 
     async getTabsLength() {
@@ -130,8 +48,9 @@ class TabManager {
         return tabs.length;
     }
 
-    async addWindow(windowId) {
-        const windowObj = { windowId: windowId, title: null };
+    async addWindow(window) {
+        console.log("addWindow called with:", window);
+        const windowObj = { windowId: window.id, title: null, sessionId: window.sessionId };
         await saveWindow(windowObj);
     }
 
@@ -150,23 +69,33 @@ class TabManager {
 const tabManager = new TabManager();
 
 async function initialize() {
+    console.log("Recently closed tabs:", await chrome.sessions.getRecentlyClosed());
+
+
+    // just in case
+    chrome.storage.local.set({
+        "tabs": null,
+        "windows": null,
+    })
+
     // Clear all tabs and windows from IndexedDB
     const db = await openDB();
-    db.transaction(["tabs", "windows"], "readwrite").objectStore("tabs").clear();
-    db.transaction(["tabs", "windows"], "readwrite").objectStore("windows").clear();
+    db.transaction(["tabs"], "readwrite").objectStore("tabs").clear();
+    db.transaction(["windows"], "readwrite").objectStore("windows").clear();
+    db.transaction(["closedTabs"], "readwrite").objectStore("closedTabs").clear();
 
     // go through every tab and add it to IndexedDB
-    await chrome.tabs.query({}, async function(tabs) {
-        for (const tab of tabs) {
-            await tabManager.addTab(tab);
-        }
-        await tabManager.setBadgeLength();
-    });
+    const tabs = await chrome.tabs.query({});
+
+    for (const tab of tabs) {
+        await tabManager.addTab(tab);
+    }
+    await tabManager.setBadgeLength();
 
     // go through every window and add it to IndexedDB
     chrome.windows.getAll({}, async function(windows) {
         for (const window of windows) {
-            await tabManager.addWindow(window.id);
+            await tabManager.addWindow(window);
         }
     });
 }
@@ -251,7 +180,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 chrome.windows.onCreated.addListener(async (window) => {   
-    await tabManager.addWindow(window.id);
+    await tabManager.addWindow(window);
     chrome.tabs.query({windowId: window.id}, async function(windowTabs) {
         for (const windowTab of windowTabs) {
             const tab = await getTab(windowTab.id);
@@ -274,4 +203,39 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
         delete closedWindowTabs[windowId];
     }
     await tabManager.setBadgeLength();
+});
+
+
+
+// HOTKEY COMMANDS
+chrome.commands.onCommand.addListener(async (command) => {
+    console.log("onCommand", command);
+    if (command == "alternate-tab") {
+        console.log("getLastTab");
+        let tab = null;
+        try {
+            tab = await getLastTab();
+        } catch (error) {
+            console.error("Error getting last tab:", error);
+        }
+        console.log("tab", tab);
+        if (tab) {
+            // make window focused
+            chrome.windows.update(tab.windowId, { focused: true });
+            // make tab active
+            chrome.tabs.update(tab.id, { active: true });
+        } else {
+            console.log("No last tab found.");
+        }
+    }
+});
+
+
+
+
+// messages
+chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+    if (message.type == "open-home") {
+        chrome.tabs.create({url: chrome.runtime.getURL("home.html")});
+    }
 });

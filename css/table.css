@@ -1,0 +1,175 @@
+
+#tab-tables-container {
+    width: 100%;
+    max-width: 100%;
+    /* padding: 1rem; */
+}
+
+#tab-tables-container {
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+    padding: .5rem;
+}
+
+.table-container {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+.table-container.active .tabs-table {
+    display: table;
+}
+.table-container-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.table-window-title {
+    padding: .5rem 1rem;
+    background: rgb(24, 24, 24);
+    border-radius: .4rem;
+    color: var(--white);
+    width: fit-content;
+    border: 1px solid transparent;
+    text-align: center;
+}
+.table-window-title:read-only {
+    cursor: default;
+    outline: none;
+}
+.table-window-title:hover {
+    border: 1px solid rgb(64, 64, 64);
+    cursor: pointer;
+}
+.table-window-settings-button {
+    padding: .4rem;
+    border: none;
+    border-radius: .3rem;
+    background: transparent;
+    color: var(--white);
+}
+.table-window-settings-button:hover {
+    background: rgb(60, 60, 60);
+}
+
+.tabs-table {
+    /* by default hidden, shown when parent container (table-container) is active */
+    display: none;
+
+    border-collapse: collapse;
+    background: rgb(24, 24, 24);
+    color: var(--white);
+    text-align: left;
+    /* border-radius: .4rem; */
+    overflow: hidden;
+
+    /* important to override the default font size */
+    font-size: 90%;
+
+    border-radius: .4rem;
+}
+.tabs-table.ungrouped-table {
+    display: table;
+}
+.table-container thead {
+    border-bottom: 1px solid rgb(64, 64, 64);
+    color: rgb(153, 153, 153);
+}
+.tabs-table thead th {
+    color: rgb(148, 148, 148);
+    border-right: 1px solid rgb(64, 64, 64);
+    padding: 0;
+}
+.tabs-table thead th:last-child {
+    border-right: none;
+}
+.thead-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    padding: .5rem 1rem;
+}
+
+.thead-title:hover {
+    background: rgb(60, 60, 60);
+    cursor: pointer;
+}
+.table-container table thead th.active {
+    color: var(--white);
+}
+.tabs-table td {
+    color: var(--white);
+}
+.tabs-table td, .tabs-table th {
+    padding: .5rem 1rem;
+}
+.tabs-table tbody tr:nth-child(odd) {
+    background: rgb(34, 34, 34);
+}
+.tabs-table tr:nth-child(even) {
+    background: rgb(24, 24, 24);
+}
+.tab-row:hover {
+    background: rgb(107, 107, 107) !important;
+    cursor: pointer;
+}
+/* not sure about this... if future bug, check this */
+.tab-row > * {
+    user-select: none;
+}
+.tab-row.active {
+    background: rgb(107, 107, 107) !important;
+}
+.tab-row:hover .tab-duplicate {
+    background: rgb(24, 24, 24);
+    border: 1px solid rgb(64, 64, 64);
+}
+.tab-duplicate {
+    border: 1px solid transparent;
+    margin-right: .3rem;
+    padding: .2rem .5rem;
+    background: rgb(107, 107, 107);
+    border-radius: .3rem;
+    color: var(--white);
+    font-size: .7rem;
+}
+.tab-title {
+    max-width: 430px;
+    width: 430px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: .2rem;
+}
+.tab-title span {
+    max-width: 100%;
+    /* max-width: 350px; */
+    display: inline-block;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.tab-favicon {
+    height: 1rem;
+    width: 1rem;
+    vertical-align: middle;
+}
+.tab-url {
+    /* max-width: 350px; */
+    font-size: .7rem;
+    color: rgb(153, 153, 153);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+
+
+
+.closed-tab {
+    opacity: .5;
+}
