@@ -82,9 +82,9 @@ async function initialize() {
     const windows = await getAllWindows();
     const closedTabs = await getAllClosedTabs();
 
-    db.transaction(["tabs"], "readwrite").objectStore("tabs").clear();
-    db.transaction(["windows"], "readwrite").objectStore("windows").clear();
-    db.transaction(["closedTabs"], "readwrite").objectStore("closedTabs").clear();
+    // db.transaction(["tabs"], "readwrite").objectStore("tabs").clear();
+    // db.transaction(["windows"], "readwrite").objectStore("windows").clear();
+    // db.transaction(["closedTabs"], "readwrite").objectStore("closedTabs").clear();
 
     if (tabs.length == 0 && windows.length == 0 && closedTabs.length == 0) {
         // go through every tab and add it to IndexedDB

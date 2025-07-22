@@ -71,6 +71,7 @@ async function saveTab(tab) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction("tabs", "readwrite");
         const store = tx.objectStore("tabs");
+        console.log("saving tab", tab);
         store.put(tab);
         tx.oncomplete = resolve;
         tx.onerror = reject;
