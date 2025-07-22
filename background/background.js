@@ -1,9 +1,9 @@
-import { DB_VERSION, openDB, saveTab, getTab, getAllTabs, getLastTab, removeTabFromDB, addTabToClosedTabs, getClosedTab, getAllClosedTabs, removeFromClosedTabs, saveWindow, removeWindowFromDB, getAllWindows} from "./database.js";
+import { DB_VERSION, openDB, saveTab, getTab, getAllTabs, getLastTab, removeTabFromDB, addTabToClosedTabs, getClosedTab, getAllClosedTabs, removeFromClosedTabs, saveWindow, removeWindowFromDB, getAllWindows, getTabsByWindowId, getTabById } from "./database.js";
 
 class TabManager {
     static NOT_FOUND = -1;
 
-    constructor() {}
+    constructor() { }
 
     async addTab(tab, data = {}) {
         console.log("addTab called with:", tab);
@@ -15,7 +15,6 @@ class TabManager {
             title: tab.title,
             favIconUrl: tab.favIconUrl,
             lastVisited: null,
-            sessionId: tab.sessionId,
             ...data
         };
         await saveTab(newTab);
@@ -25,7 +24,7 @@ class TabManager {
     }
 
     async updateTab(tabId, newData) {
-        const tab = await getTab(tabId);
+        const tab = await getTabById(tabId);
         if (!tab) {
             console.log("tab not found", tabId);
             return;
@@ -71,36 +70,44 @@ const tabManager = new TabManager();
 async function initialize() {
     console.log("Recently closed tabs:", await chrome.sessions.getRecentlyClosed());
 
-
     // just in case
     chrome.storage.local.set({
         "tabs": null,
         "windows": null,
     })
 
-    // Clear all tabs and windows from IndexedDB
     const db = await openDB();
-    db.transaction(["tabs"], "readwrite").objectStore("tabs").clear();
-    db.transaction(["windows"], "readwrite").objectStore("windows").clear();
-    db.transaction(["closedTabs"], "readwrite").objectStore("closedTabs").clear();
 
-    // go through every tab and add it to IndexedDB
-    const tabs = await chrome.tabs.query({});
+    const tabs = await getAllTabs();
+    const windows = await getAllWindows();
+    const closedTabs = await getAllClosedTabs();
 
-    for (const tab of tabs) {
-        await tabManager.addTab(tab);
-    }
-    await tabManager.setBadgeLength();
+    // db.transaction(["tabs"], "readwrite").objectStore("tabs").clear();
+    // db.transaction(["windows"], "readwrite").objectStore("windows").clear();
+    // db.transaction(["closedTabs"], "readwrite").objectStore("closedTabs").clear();
 
-    // go through every window and add it to IndexedDB
-    chrome.windows.getAll({}, async function(windows) {
-        for (const window of windows) {
-            await tabManager.addWindow(window);
+    if (tabs.length == 0 && windows.length == 0 && closedTabs.length == 0) {
+        // go through every tab and add it to IndexedDB
+        const tabs = await chrome.tabs.query({});
+
+        for (const tab of tabs) {
+            await tabManager.addTab(tab);
         }
-    });
+        await tabManager.setBadgeLength();
+
+        // go through every window and add it to IndexedDB
+        chrome.windows.getAll({}, async function (windows) {
+            for (const window of windows) {
+                await tabManager.addWindow(window);
+            }
+        });
+    }
+
+    await tabManager.setBadgeLength();
 }
 
-chrome.runtime.onStartup.addListener(() => {
+chrome.runtime.onStartup.addListener(async () => {
+    // Clear all tabs and windows from IndexedDB
     initialize();
 });
 
@@ -110,7 +117,8 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
     console.log("onActivated", activeInfo);
-    const tab = await getTab(activeInfo.tabId);
+    const tab = await getTabById(activeInfo.tabId);
+    console.log("tab", tab);
     if (tab) {
         tab.lastVisited = new Date().getTime();
         await saveTab(tab);
@@ -119,7 +127,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
     console.log("onFocusChanged", windowId);
-    chrome.tabs.query({active: true, windowId: windowId}, async function(tabs) {
+    chrome.tabs.query({ active: true, windowId: windowId }, async function (tabs) {
         if (tabs.length > 0) {
             const tab = await getTab(tabs[0].id);
             if (tab) {
@@ -150,7 +158,7 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
     console.log("tabs.onRemoved", tabId, removeInfo);
     await tabManager.removeTab(tabId);
     await tabManager.setBadgeLength();
-    await chrome.tabs.query({active: true}, async function(tabs) {
+    await chrome.tabs.query({ active: true }, async function (tabs) {
         if (tabs.length > 0) {
             await tabManager.updateTab(tabs[0].id, {
                 lastVisited: new Date().getTime()
@@ -159,7 +167,7 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
     });
 });
 
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {   
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     console.log("\n\n\nonUpdated", tabId, changeInfo, tab);
     if (changeInfo.status == "complete") {
         await tabManager.updateTab(tabId, {
@@ -176,12 +184,16 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         await tabManager.updateTab(tabId, {
             favIconUrl: tab.favIconUrl ? tab.favIconUrl : null
         });
+    } else if (changeInfo.url) {
+        await tabManager.updateTab(tabId, {
+            url: tab.url,
+        });
     }
 });
 
-chrome.windows.onCreated.addListener(async (window) => {   
+chrome.windows.onCreated.addListener(async (window) => {
     await tabManager.addWindow(window);
-    chrome.tabs.query({windowId: window.id}, async function(windowTabs) {
+    chrome.tabs.query({ windowId: window.id }, async function (windowTabs) {
         for (const windowTab of windowTabs) {
             const tab = await getTab(windowTab.id);
             if (tab) {
@@ -231,11 +243,9 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 
 
-
-
 // messages
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     if (message.type == "open-home") {
-        chrome.tabs.create({url: chrome.runtime.getURL("home.html")});
+        chrome.tabs.create({ url: chrome.runtime.getURL("home.html") });
     }
 });

@@ -154,6 +154,7 @@ class TabManager {
         // show all windows (if grouped by windows)
         if (SYSTEM_GROUP_BY_WINDOW) {
             for (const windowId of Object.keys(this.windows)) {
+                console.log("windowId", windowId, this.windows);
                 const windowElement = document.querySelector(`[data-window-id="${windowId}"]`);
                 windowElement.classList.remove("hidden");
             }

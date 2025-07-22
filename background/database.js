@@ -1,17 +1,36 @@
-const DB_VERSION = 5;
+const DB_VERSION = 10;
 
-export { DB_VERSION, openDB, saveTab, getTab, getAllTabs, getLastTab, removeTabFromDB, addTabToClosedTabs, getClosedTab, getAllClosedTabs, removeFromClosedTabs, saveWindow, removeWindowFromDB, getAllWindows, updateSystemGroupByWindow, getSystemSetting };
+export { 
+    DB_VERSION, 
+    openDB, 
+    saveTab, 
+    getTab, 
+    getAllTabs, 
+    getLastTab, 
+    removeTabFromDB, 
+    addTabToClosedTabs, 
+    getClosedTab, 
+    getAllClosedTabs, 
+    removeFromClosedTabs, 
+    saveWindow, 
+    removeWindowFromDB, 
+    getAllWindows, 
+    updateSystemGroupByWindow, 
+    getSystemSetting, 
+    getTabsByWindowId,
+    getTabById,
+};
 
 // IndexedDB helper functions
 function openDB() {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open("TabSentryDB", DB_VERSION);
         request.onupgradeneeded = function(event) {
+            console.log("onupgradeneeded");
             const db = event.target.result;
             if (!db.objectStoreNames.contains("tabs")) {
-                const store = db.createObjectStore("tabs", { keyPath: "sessionId" });
+                const store = db.createObjectStore("tabs", { keyPath: "id" });
                 store.createIndex("id", "id", { unique: false });
-                store.createIndex("sessionId", "sessionId", { unique: true });
                 store.createIndex("windowId", "windowId", { unique: false });
                 store.createIndex("lastVisited", "lastVisited", { unique: false });
                 store.createIndex("index", "index", { unique: false });
@@ -20,16 +39,18 @@ function openDB() {
                 store.createIndex("favIconUrl", "favIconUrl", { unique: false });
             }
             if (!db.objectStoreNames.contains("windows")) {
-                const store = db.createObjectStore("windows", { keyPath: "sessionId" });
-                store.createIndex("id", "id", { unique: false });
-                store.createIndex("sessionId", "sessionId", { unique: true });
-                store.createIndex("windowId", "windowId", { unique: true});
+                const store = db.createObjectStore("windows", { keyPath: "windowId" });
+                store.createIndex("windowId", "windowId", { unique: false });
                 store.createIndex("title", "title", { unique: false });
+                store.createIndex("tabsLength", "tabsLength", { unique: false });
+                store.createIndex("top", "top", { unique: false });
+                store.createIndex("left", "left", { unique: false });
+                store.createIndex("state", "state", { unique: false });
+                store.createIndex("incognito", "incognito", { unique: false });
             }
             if (!db.objectStoreNames.contains("closedTabs")) {
                 const store = db.createObjectStore("closedTabs", { keyPath: "id" });
                 store.createIndex("id", "id", { unique: false });
-                store.createIndex("sessionId", "sessionId", { unique: true });
                 store.createIndex("windowId", "windowId", { unique: false });
                 store.createIndex("lastVisited", "lastVisited", { unique: false });
                 store.createIndex("url", "url", { unique: false });
@@ -76,6 +97,26 @@ async function getAllTabs() {
             resolve(req.result);
         };
         req.onerror = reject;
+    });
+}
+
+async function getTabsByWindowId(windowId) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("tabs", "readonly");
+        const store = tx.objectStore("tabs");
+        const index = store.index("windowId");
+        const cursor = index.openCursor(windowId);
+        const tabs = [];
+        cursor.onsuccess = () => {
+            if (cursor.result) {
+                tabs.push(cursor.result.value);
+                cursor.result.continue();
+            } else {
+                resolve(tabs.sort((a, b) => a.index - b.index));
+            }
+        };
+        cursor.onerror = reject;
     });
 }
 
@@ -172,6 +213,7 @@ async function saveWindow(windowObj) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction("windows", "readwrite");
+
         tx.objectStore("windows").put(windowObj);
         tx.oncomplete = resolve;
         tx.onerror = reject;
@@ -228,6 +270,19 @@ async function getSystemSetting(key) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction("system", "readonly");
         const req = tx.objectStore("system").get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = reject;
+    });
+}
+
+async function getTabById(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("tabs", "readonly");
+        const store = tx.objectStore("tabs");
+        const index = store.index("id");
+        const req = index.get(id); // get the first matching record
+
         req.onsuccess = () => resolve(req.result);
         req.onerror = reject;
     });
