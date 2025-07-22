@@ -8,7 +8,6 @@ class TabManager {
     tabs = {};
     ungroupedTableId = "ungrouped-table";
 
-
     constructor() {
         return new Promise(async (resolve, reject) => {
             // get tabs from IndexedDB
@@ -24,6 +23,14 @@ class TabManager {
             for (const win of windowsArr) {
                 this.windows[win.windowId] = win;
             }
+
+            const closedTabsArr = await getAllClosedTabs();
+            this.closedTabs = {};
+            for (const tab of closedTabsArr) {
+                this.closedTabs[tab.id] = tab;
+            }
+
+            this.filtered = await getSystemSetting("filterByLLMs");
 
             this.searchIndex = new Map();
 
@@ -79,14 +86,25 @@ class TabManager {
     }
 
     async search(query, fields = ["title", "url", "windowId"]) {
-        if (query.length == 0) return {"openTabs": Object.values(this.tabs), "closedTabs": []};
+        console.log("=========\n[INFO] search()");
+        console.log("[INFO] filtered", this.filtered);
 
-        const cacheKey = `${query}-${fields.join(",")}`;
+
+        if (query.length == 0) {
+            let openTabs = Object.values(this.tabs);
+            if (this.filtered) {
+                const results = await this.filter(openTabs, []);
+                openTabs = results.openTabs;
+            }
+            return {"openTabs": openTabs, "closedTabs": []};
+        }
+
+        // const cacheKey = `${query}-${fields.join(",")}-${this.filtered}`;
 
         // check cache
-        if (this.searchIndex.has(cacheKey)) {
-            return this.searchIndex.get(cacheKey);
-        }
+        // if (this.searchIndex.has(cacheKey)) {
+        //     return this.searchIndex.get(cacheKey);
+        // }
 
         // no cache, search
 
@@ -95,7 +113,7 @@ class TabManager {
         // if no query, return all tabs
         if (!normalizedQuery) return this.tabs;
 
-        const openTabs = Object.values(this.tabs).filter(tab => {
+        let openTabs = Object.values(this.tabs).filter(tab => {
             return fields.some(field => {
                 try {
                     let value = tab[field].toLowerCase();
@@ -107,8 +125,7 @@ class TabManager {
             });
         });
 
-        let closedTabs = await getAllClosedTabs();
-        closedTabs = closedTabs.filter(tab => {
+        let closedTabs = Object.values(this.closedTabs).filter(tab => {
             return fields.some(field => {
                 try {
                     let value = tab[field].toLowerCase();
@@ -121,7 +138,15 @@ class TabManager {
         });
 
         // cache results
-        this.searchIndex.set(cacheKey, {"openTabs": openTabs, "closedTabs": closedTabs});
+        // this.searchIndex.set(cacheKey, {"openTabs": openTabs, "closedTabs": closedTabs});
+
+        if (this.filtered) {
+            const results = await this.filter(openTabs, closedTabs);
+            console.log("[INFO] filtered results", results);
+            openTabs = results.openTabs;
+            closedTabs = results.closedTabs;
+        }
+
         return {"openTabs": openTabs, "closedTabs": closedTabs};
     }
 
@@ -222,10 +247,36 @@ class TabManager {
     }
 
 
+    async filter(openTabs, closedTabs) {
+        console.log("[INFO] filtering open tabs", openTabs);
+        let t = [];
+        const urls = ["chatgpt.com", "perplexity.ai", "claude.ai", "gemini.google.com/app", "monica.im", "notebooklm.google"];
+        for (const tab of openTabs) {
+            if (urls.some(url => tab.url.includes(url))) {
+                t.push(tab);
+            }
+        }
+        openTabs = t;
+        let y = [];
+        for (const tab of closedTabs) {
+            if (urls.some(url => tab.url.includes(url))) {
+                y.push(tab);
+            }
+        }
+        closedTabs = y;
+
+        return {
+            "openTabs": openTabs,
+            "closedTabs": closedTabs
+        }
+    }
+
+
     async loadTabs(sortDescending = true, sortBy = "lastVisited") {
         // clear the tab tables container
         this.tabTablesContainer.innerHTML = "";
         this.tables = {};
+
 
         let tabs = this.sort(this.tabs, sortBy, sortDescending);
 

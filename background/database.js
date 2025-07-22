@@ -1,4 +1,4 @@
-const DB_VERSION = 10;
+const DB_VERSION = 11;
 
 export { 
     DB_VERSION, 
@@ -19,6 +19,7 @@ export {
     getSystemSetting, 
     getTabsByWindowId,
     getTabById,
+    updateSystemFilterByLLMs,
 };
 
 // IndexedDB helper functions
@@ -262,6 +263,29 @@ async function updateSystemGroupByWindow(value = null) {
                 tx.onerror = reject;
             }
             req.onerror = reject;
+        }
+    })
+}
+
+async function updateSystemFilterByLLMs(value = null) {
+    const db = await openDB();
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("system", "readwrite");
+        if (value) {
+            tx.objectStore("system").put(value, "filterByLLMs");
+            tx.oncomplete = () => resolve(value);
+            tx.onerror = reject;
+        } else {
+            const req = tx.objectStore("system").get("filterByLLMs");
+            req.onsuccess = () => {
+                tx.objectStore("system").put(!req.result, "filterByLLMs");
+                tx.oncomplete = () => resolve(!req.result);
+                tx.onerror = reject;
+            }
+            req.onerror = reject;
+            tx.oncomplete = resolve;
+            tx.onerror = reject;
         }
     })
 }

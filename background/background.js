@@ -8,8 +8,8 @@ class TabManager {
     async addTab(tab, data = {}) {
         console.log("addTab called with:", tab);
         let newTab = {
-            index: tab.index,
             id: tab.id,
+            index: tab.index,
             windowId: tab.windowId,
             url: tab.url,
             title: tab.title,
@@ -17,6 +17,7 @@ class TabManager {
             lastVisited: null,
             ...data
         };
+        console.log("tabId", tab.id);
         await saveTab(newTab);
         console.log("✅ TAB ADDED", newTab);
         console.log("tabsLength", await this.getTabsLength());
@@ -85,6 +86,9 @@ async function initialize() {
     // db.transaction(["tabs"], "readwrite").objectStore("tabs").clear();
     // db.transaction(["windows"], "readwrite").objectStore("windows").clear();
     // db.transaction(["closedTabs"], "readwrite").objectStore("closedTabs").clear();
+
+
+    console.log(tabs.length, windows.length, closedTabs.length);
 
     if (tabs.length == 0 && windows.length == 0 && closedTabs.length == 0) {
         // go through every tab and add it to IndexedDB

@@ -1,10 +1,10 @@
 // default false (tabs are not grouped by windows)
 let SYSTEM_GROUP_BY_WINDOW = false; 
+let SYSTEM_FILTER_BY_LLMS = false;
 
 
 import { TabManager } from "./TabManager.js";
-import { updateSystemGroupByWindow, getSystemSetting, removeFromClosedTabs } from "../background/database.js";
-
+import { updateSystemGroupByWindow, getSystemSetting, removeFromClosedTabs, updateSystemFilterByLLMs } from "../background/database.js";
 
 
 let tabManager = null;
@@ -12,6 +12,7 @@ let tabManager = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
     SYSTEM_GROUP_BY_WINDOW = await getSystemSetting("groupByWindow");
+    SYSTEM_FILTER_BY_LLMS = await getSystemSetting("filterByLLMs");
 
     tabManager = await new TabManager();
 
@@ -85,7 +86,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     /*
     * Search Input Event Listener
     */
-    document.getElementById("search-input").addEventListener("input", async function(e) {
+    const searchInput = document.getElementById("search-input");
+    searchInput.addEventListener("input", async function(e) {
         const query = e.target.value;
         const results = await tabManager.search(query);
         await tabManager.hideShowTabs(tabManager.sort(results["openTabs"]), tabManager.sort(results["closedTabs"]));
@@ -96,10 +98,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     * Group By Window Button Event Listener
     */
     const groupByWindowBtn = document.querySelector("#group-by-window-btn");
+    const filterByLLMsBtn = document.querySelector("#filter-by-llms-btn");
 
     // initial state of the button based on system setting
     if (SYSTEM_GROUP_BY_WINDOW) {
         groupByWindowBtn.classList.add("active");
+    }
+    if (SYSTEM_FILTER_BY_LLMS) {
+        filterByLLMsBtn.classList.add("active");
+
+        const query = searchInput.value;
+        const results = await tabManager.search(query);
+        await tabManager.hideShowTabs(tabManager.sort(results["openTabs"]), tabManager.sort(results["closedTabs"]));
     }
 
     groupByWindowBtn.addEventListener("click", async function(e) {
@@ -142,5 +152,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     const settingsBtn = document.querySelector("#settings-btn");
     settingsBtn.addEventListener("click", function(e) {
         chrome.runtime.sendMessage({type: "open-home"});
+    });
+
+    filterByLLMsBtn.addEventListener("click", async function(e) {
+        // toggle the filter by LLMs value in storage
+        SYSTEM_FILTER_BY_LLMS = await updateSystemFilterByLLMs();
+        tabManager.filtered = SYSTEM_FILTER_BY_LLMS;
+        filterByLLMsBtn.classList.toggle("active");
+
+        const query = searchInput.value;
+        const results = await tabManager.search(query);
+        console.log("[INFO] results", results);
+        await tabManager.hideShowTabs(tabManager.sort(results["openTabs"]), tabManager.sort(results["closedTabs"]));
     });
 });
