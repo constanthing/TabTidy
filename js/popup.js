@@ -116,7 +116,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         try {
             SYSTEM_GROUP_BY_WINDOW = await updateSystemGroupByWindow();
             groupByWindowBtn.classList.toggle("active");
+
             await tabManager.loadTabs();
+
+            const query = searchInput.value;
+            const results = await tabManager.search(query);
+            console.log("[INFO] results", results);
+            await tabManager.hideShowTabs(tabManager.sort(results["openTabs"]), tabManager.sort(results["closedTabs"]));
         } catch (e) {
             console.error("Error updating SYSTEM_GROUP_BY_WINDOW: ", e);
         }
