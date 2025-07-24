@@ -3,21 +3,21 @@ let SYSTEM_GROUP_BY_WINDOW = false;
 let SYSTEM_FILTER_BY_LLMS = false;
 
 
-import { TabManager } from "./TabManager.js";
-import { updateSystemGroupByWindow, getSystemSetting, removeFromClosedTabs, updateSystemFilterByLLMs } from "../background/database.js";
+import PopupManager from "./PopupManager.js";
+import TabManager from "../background/TabManager.js";
 
-
-let tabManager = null;
+const tabManager = new TabManager();
+let popupManager = null;
 
 
 document.addEventListener("DOMContentLoaded", async () => {
-    SYSTEM_GROUP_BY_WINDOW = await getSystemSetting("groupByWindow");
-    SYSTEM_FILTER_BY_LLMS = await getSystemSetting("filterByLLMs");
+    SYSTEM_GROUP_BY_WINDOW = await tabManager.getSystemSetting("groupByWindow");
+    SYSTEM_FILTER_BY_LLMS = await tabManager.getSystemSetting("filterByLLMs");
 
-    tabManager = await new TabManager();
+    popupManager = await new PopupManager();
 
     // Initial Load of Tabs
-    await tabManager.loadTabs();
+    await popupManager.loadTabs();
 
     const tabInfo = document.getElementById("tab-info");
     const tabInfoTabId = document.getElementById("tab-id");
@@ -49,15 +49,28 @@ document.addEventListener("DOMContentLoaded", async () => {
             const row = e.target.closest(".tab-row");
             const tabId = parseInt(row.dataset.tabId);
             const windowId = parseInt(row.dataset.windowId);
+            
+            console.log("[INFO] is closed tab", row.closest(".closed-tab"));
 
             if (e.target.closest(".closed-tab")) {
+                console.log("[INFO] closed tab clicked");
                 // remove from closed tabs table 
-                await removeFromClosedTabs(tabId);
+                await tabManager.removeFromClosedTabs(tabId);
 
-                // open in new tab and same window (if possible)
-                const windowExists = await chrome.windows.get(windowId);
+                let windowExists = false;
+                try {
+                    // open in new tab and same window (if possible)
+                    windowExists = await chrome.windows.get(windowId);
+                } catch (e) {
+                    windowExists = false;
+                }
+
                 const tabIndex = parseInt(row.dataset.tabIndex);
                 const tabUrl = row.querySelector(".tab-url").textContent;
+
+                console.log("[INFO] tabUrl", tabUrl);
+                console.log("[INFO] windowExists", windowExists);
+                console.log("[INFO] tabIndex", tabIndex);
 
                 if (windowExists) {
                     chrome.tabs.create({url: tabUrl, windowId: windowId, index: tabIndex}, function(tab) {
@@ -89,8 +102,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const searchInput = document.getElementById("search-input");
     searchInput.addEventListener("input", async function(e) {
         const query = e.target.value;
-        const results = await tabManager.search(query);
-        await tabManager.hideShowTabs(tabManager.sort(results["openTabs"]), tabManager.sort(results["closedTabs"]));
+        const results = await popupManager.search(query);
+        await popupManager.hideShowTabs(popupManager.sort(results["openTabs"]), popupManager.sort(results["closedTabs"]));
     });
 
 
@@ -108,21 +121,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         filterByLLMsBtn.classList.add("active");
 
         const query = searchInput.value;
-        const results = await tabManager.search(query);
-        await tabManager.hideShowTabs(tabManager.sort(results["openTabs"]), tabManager.sort(results["closedTabs"]));
+        const results = await popupManager.search(query);
+        await popupManager.hideShowTabs(popupManager.sort(results["openTabs"]), popupManager.sort(results["closedTabs"]));
     }
 
     groupByWindowBtn.addEventListener("click", async function(e) {
         try {
-            SYSTEM_GROUP_BY_WINDOW = await updateSystemGroupByWindow();
+            SYSTEM_GROUP_BY_WINDOW = await tabManager.updateSystemGroupByWindow();
             groupByWindowBtn.classList.toggle("active");
 
-            await tabManager.loadTabs();
+            await popupManager.loadTabs();
 
             const query = searchInput.value;
-            const results = await tabManager.search(query);
+            const results = await popupManager.search(query);
             console.log("[INFO] results", results);
-            await tabManager.hideShowTabs(tabManager.sort(results["openTabs"]), tabManager.sort(results["closedTabs"]));
+            await popupManager.hideShowTabs(popupManager.sort(results["openTabs"]), popupManager.sort(results["closedTabs"]));
         } catch (e) {
             console.error("Error updating SYSTEM_GROUP_BY_WINDOW: ", e);
         }
@@ -162,13 +175,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     filterByLLMsBtn.addEventListener("click", async function(e) {
         // toggle the filter by LLMs value in storage
-        SYSTEM_FILTER_BY_LLMS = await updateSystemFilterByLLMs();
-        tabManager.filtered = SYSTEM_FILTER_BY_LLMS;
+        SYSTEM_FILTER_BY_LLMS = await tabManager.updateSystemFilterByLLMs();
+        popupManager.filtered = SYSTEM_FILTER_BY_LLMS;
         filterByLLMsBtn.classList.toggle("active");
 
         const query = searchInput.value;
-        const results = await tabManager.search(query);
+        const results = await popupManager.search(query);
         console.log("[INFO] results", results);
-        await tabManager.hideShowTabs(tabManager.sort(results["openTabs"]), tabManager.sort(results["closedTabs"]));
+        await popupManager.hideShowTabs(popupManager.sort(results["openTabs"]), popupManager.sort(results["closedTabs"]));
     });
 });

@@ -1,71 +1,6 @@
-import { DB_VERSION, openDB, saveTab, getTab, getAllTabs, getLastTab, removeTabFromDB, addTabToClosedTabs, getClosedTab, getAllClosedTabs, removeFromClosedTabs, saveWindow, removeWindowFromDB, getAllWindows, getTabsByWindowId, getTabById } from "./database.js";
+import TabManager from "./TabManager.js";
 
-class TabManager {
-    static NOT_FOUND = -1;
-
-    constructor() { }
-
-    async addTab(tab, data = {}) {
-        console.log("addTab called with:", tab);
-        let newTab = {
-            id: tab.id,
-            index: tab.index,
-            windowId: tab.windowId,
-            url: tab.url,
-            title: tab.title,
-            favIconUrl: tab.favIconUrl,
-            lastVisited: null,
-            ...data
-        };
-        console.log("tabId", tab.id);
-        await saveTab(newTab);
-        console.log("✅ TAB ADDED", newTab);
-        console.log("tabsLength", await this.getTabsLength());
-        console.log("Tab successfully added to storage");
-    }
-
-    async updateTab(tabId, newData) {
-        const tab = await getTabById(tabId);
-        if (!tab) {
-            console.log("tab not found", tabId);
-            return;
-        }
-        for (const key of Object.keys(newData)) {
-            tab[key] = newData[key];
-        }
-        await saveTab(tab);
-    }
-
-    async removeTab(tabId) {
-        console.log("removeTab called with:", tabId);
-        const removedTab = await removeTabFromDB(tabId);
-        console.log("removedTab", removedTab);
-        await addTabToClosedTabs(removedTab);
-    }
-
-    async getTabsLength() {
-        const tabs = await getAllTabs();
-        return tabs.length;
-    }
-
-    async addWindow(window) {
-        console.log("addWindow called with:", window);
-        const windowObj = { windowId: window.id, title: null, sessionId: window.sessionId };
-        await saveWindow(windowObj);
-    }
-
-    async removeWindow(windowId) {
-        await removeWindowFromDB(windowId);
-    }
-
-    async setBadgeLength() {
-        const tabsLength = await this.getTabsLength();
-        await chrome.action.setBadgeText({
-            text: tabsLength.toString()
-        });
-    }
-}
-
+// Create tabmanager instance
 const tabManager = new TabManager();
 
 async function initialize() {
@@ -77,16 +12,12 @@ async function initialize() {
         "windows": null,
     })
 
-    const db = await openDB();
 
-    const tabs = await getAllTabs();
-    const windows = await getAllWindows();
-    const closedTabs = await getAllClosedTabs();
+    const tabs = await tabManager.getAllTabs();
+    const windows = await tabManager.getAllWindows();
+    const closedTabs = await tabManager.getAllClosedTabs();
 
-    // db.transaction(["tabs"], "readwrite").objectStore("tabs").clear();
-    // db.transaction(["windows"], "readwrite").objectStore("windows").clear();
-    // db.transaction(["closedTabs"], "readwrite").objectStore("closedTabs").clear();
-
+    await tabManager.clearStorage();
 
     console.log(tabs.length, windows.length, closedTabs.length);
 
@@ -95,7 +26,7 @@ async function initialize() {
         const tabs = await chrome.tabs.query({});
 
         for (const tab of tabs) {
-            await tabManager.addTab(tab);
+            await tabManager.addTab(tab, { lastVisited: null });
         }
         await tabManager.setBadgeLength();
 
@@ -110,6 +41,13 @@ async function initialize() {
     await tabManager.setBadgeLength();
 }
 
+
+/*
+*
+* RUNTIME EVENTS
+*
+*/
+
 chrome.runtime.onStartup.addListener(async () => {
     // Clear all tabs and windows from IndexedDB
     initialize();
@@ -119,60 +57,22 @@ chrome.runtime.onInstalled.addListener(() => {
     initialize();
 });
 
-chrome.tabs.onActivated.addListener(async (activeInfo) => {
-    console.log("onActivated", activeInfo);
-    const tab = await getTabById(activeInfo.tabId);
-    console.log("tab", tab);
-    if (tab) {
-        tab.lastVisited = new Date().getTime();
-        await saveTab(tab);
-    }
-});
+/*
+*
+* TABS EVENTS
+*
+*/
 
-chrome.windows.onFocusChanged.addListener(async (windowId) => {
-    console.log("onFocusChanged", windowId);
-    chrome.tabs.query({ active: true, windowId: windowId }, async function (tabs) {
-        if (tabs.length > 0) {
-            const tab = await getTab(tabs[0].id);
-            if (tab) {
-                tab.lastVisited = new Date().getTime();
-                await saveTab(tab);
-            }
-        }
-    });
-});
+
 
 chrome.tabs.onCreated.addListener(async (tab) => {
-    console.log("onCreated", tab);
-    console.log("tabLength", await tabManager.getTabsLength());
-    await tabManager.addTab(tab);
-    console.log("Tab added, getting length...");
+    console.log("[INFO] onCreated", tab);
+    await tabManager.addTab(tab, { lastVisited: null });
     await tabManager.setBadgeLength();
-});
-
-let closedWindowTabs = {};
-chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
-    if (removeInfo.isWindowClosing) {
-        if (!(removeInfo.windowId in closedWindowTabs)) {
-            closedWindowTabs[removeInfo.windowId] = [];
-        }
-        closedWindowTabs[removeInfo.windowId].push(tabId);
-        return;
-    }
-    console.log("tabs.onRemoved", tabId, removeInfo);
-    await tabManager.removeTab(tabId);
-    await tabManager.setBadgeLength();
-    await chrome.tabs.query({ active: true }, async function (tabs) {
-        if (tabs.length > 0) {
-            await tabManager.updateTab(tabs[0].id, {
-                lastVisited: new Date().getTime()
-            });
-        }
-    });
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    console.log("\n\n\nonUpdated", tabId, changeInfo, tab);
+    console.log("[INFO] onUpdated", tabId, changeInfo, tab);
     if (changeInfo.status == "complete") {
         await tabManager.updateTab(tabId, {
             url: tab.url,
@@ -195,23 +95,87 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     }
 });
 
+let closedWindowTabs = {};
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+    if (removeInfo.isWindowClosing) {
+        if (!(removeInfo.windowId in closedWindowTabs)) {
+            closedWindowTabs[removeInfo.windowId] = [];
+        }
+        closedWindowTabs[removeInfo.windowId].push(tabId);
+        return;
+    }
+    console.log("[INFO] onRemoved", tabId, removeInfo);
+    await tabManager.removeTab(tabId);
+    await tabManager.setBadgeLength();
+    await chrome.tabs.query({ active: true }, async function (tabs) {
+        if (tabs.length > 0) {
+            await tabManager.updateTab(tabs[0].id, {
+                lastVisited: new Date().getTime()
+            });
+        }
+    });
+});
+
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    console.log("[INFO] onActivated", activeInfo);
+    const tab = await tabManager.getTab(activeInfo.tabId);
+    console.log("tab", tab);
+    if (tab) {
+        tab.lastVisited = new Date().getTime();
+        await tabManager.updateTab(activeInfo.tabId, {
+            lastVisited: new Date().getTime()
+        });
+    }
+});
+
+chrome.tabs.onAttached.addListener(async (tabId, attachInfo) => {
+    console.log("[INFO] onAttached", tabId, attachInfo);
+    await tabManager.updateTab(tabId, {
+        windowId: attachInfo.newWindowId
+    })
+});
+
+
+
+/*
+*
+* WINDOWS EVENTS
+*
+*/
+chrome.windows.onFocusChanged.addListener(async (windowId) => {
+    // console.log("[INFO] onFocusChanged", windowId);
+    // chrome.tabs.query({ active: true, windowId: windowId }, async function (tabs) {
+    //     if (tabs.length > 0) {
+    //         const tab = await getTab(tabs[0].id);
+    //         if (tab) {
+    //             await saveTab(tab, { lastVisited: new Date().getTime() });
+    //         }
+    //     }
+    // });
+});
+
 chrome.windows.onCreated.addListener(async (window) => {
+    console.log("[INFO] windows.onCreated", window);
     await tabManager.addWindow(window);
     chrome.tabs.query({ windowId: window.id }, async function (windowTabs) {
         for (const windowTab of windowTabs) {
-            const tab = await getTab(windowTab.id);
+            const tab = await tabManager.getTab(windowTab.id);
             if (tab) {
-                tab.windowId = window.id;
-                await saveTab(tab);
+                await tabManager.addTab(tab, { windowId: window.id });
             }
         }
     });
 });
 
 chrome.windows.onRemoved.addListener(async (windowId) => {
-    console.log("windows.onRemoved", windowId);
+    /*
+    * If window has 1 tab, that is detached from current window and moved to another window, then onRemoved is called AFTER onAttached is called for the tab.
+    * As a result, the window will not have any tabs in it. Hence, the if statement check.
+    */
+    console.log("[INFO] windows.onRemoved", windowId);
     await tabManager.removeWindow(windowId);
     const tabIds = closedWindowTabs[windowId];
+    console.log(tabIds)
     if (tabIds) {
         for (const tabId of tabIds) {
             await tabManager.removeTab(tabId);
@@ -223,14 +187,18 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
 
 
 
-// HOTKEY COMMANDS
+/*
+*
+* COMMANDS
+*
+*/
 chrome.commands.onCommand.addListener(async (command) => {
-    console.log("onCommand", command);
+    console.log("[INFO] onCommand", command);
     if (command == "alternate-tab") {
         console.log("getLastTab");
         let tab = null;
         try {
-            tab = await getLastTab();
+            tab = await tabManager.getLastTab();
         } catch (error) {
             console.error("Error getting last tab:", error);
         }
@@ -247,7 +215,13 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 
 
-// messages
+
+/*
+*
+* MESSAGES
+*
+*/
+
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     if (message.type == "open-home") {
         chrome.tabs.create({ url: chrome.runtime.getURL("home.html") });

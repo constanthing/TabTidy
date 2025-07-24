@@ -1,8 +1,8 @@
-import { getAllClosedTabs, getAllWindows, getAllTabs, getSystemSetting } from "../background/database.js";
+import TabManager from "../background/TabManager.js";
 
-export { TabManager };
+const tabManager = new TabManager();
 
-class TabManager {
+export default class PopupManager {
     tables = {};
     windows = {};
     tabs = {};
@@ -11,26 +11,26 @@ class TabManager {
     constructor() {
         return new Promise(async (resolve, reject) => {
             // get tabs from IndexedDB
-            const tabsArr = await getAllTabs();
+            const tabsArr = await tabManager.getAllTabs();
             this.tabs = {};
             for (const tab of tabsArr) {
                 this.tabs[tab.id] = tab;
             }
 
             // get windows from IndexedDB
-            const windowsArr = await getAllWindows();
+            const windowsArr = await tabManager.getAllWindows();
             this.windows = {};
             for (const win of windowsArr) {
                 this.windows[win.windowId] = win;
             }
 
-            const closedTabsArr = await getAllClosedTabs();
+            const closedTabsArr = await tabManager.getAllClosedTabs();
             this.closedTabs = {};
             for (const tab of closedTabsArr) {
                 this.closedTabs[tab.id] = tab;
             }
 
-            this.filtered = await getSystemSetting("filterByLLMs");
+            this.filtered = await tabManager.getSystemSetting("filterByLLMs");
 
             this.searchIndex = new Map();
 
@@ -170,7 +170,7 @@ class TabManager {
 
     async hideShowTabs(openTabs, closedTabs) {
 
-        const SYSTEM_GROUP_BY_WINDOW = await getSystemSetting("groupByWindow");
+        const SYSTEM_GROUP_BY_WINDOW = await tabManager.getSystemSetting("groupByWindow");
 
         document.querySelectorAll(".closed-tab").forEach(tab => {
             tab.remove();
@@ -235,7 +235,7 @@ class TabManager {
             }
 
             for (const closedTab of closedTabs) {
-                const row = this.createTabRow(closedTab);
+                const row = this.createRowElement(closedTab);
                 row.classList.add("closed-tab");
                 tbody.appendChild(row);
             }
@@ -280,13 +280,13 @@ class TabManager {
 
         let tabs = this.sort(this.tabs, sortBy, sortDescending);
 
-        const SYSTEM_GROUP_BY_WINDOW = await getSystemSetting("groupByWindow");
+        const SYSTEM_GROUP_BY_WINDOW = await tabManager.getSystemSetting("groupByWindow");
 
         tabs.forEach(async (tab) => {
             if (SYSTEM_GROUP_BY_WINDOW) {
-                await this.createWindowTables(tab.id);
+                await this.createGroupedRow(tab.id);
             } else {
-                await this.createUngroupedTable(tab.id);
+                await this.createUngroupedRow(tab.id);
             }
         });
 
@@ -297,7 +297,7 @@ class TabManager {
     }
 
 
-    createTabRow(tab) {
+    createRowElement(tab) {
         const row = document.createElement("tr");
         row.classList.add("tab-row");
         row.dataset.tabId = tab.id;
@@ -321,12 +321,10 @@ class TabManager {
     }
 
 
-    createWindowTables(tabId) {
+    createGroupedRow(tabId) {
         return new Promise(async (resolve, reject) => {
             // returns existing tab if it exists, otherwise creates a new tab
             let tab = this.getTab(tabId);
-
-            console.log("createWindowTables() tab", tab);
 
             if (!tab) {
                 resolve();
@@ -366,12 +364,12 @@ class TabManager {
             const table = this.tables[windowId];
             const tbody = table.querySelector("tbody");
 
-            tbody.appendChild(this.createTabRow(tab));
+            tbody.appendChild(this.createRowElement(tab));
 
             resolve();
         })
     }
-    createUngroupedTable(tabId) {
+    createUngroupedRow(tabId) {
         return new Promise(async (resolve, reject) => {
             // returns existing tab if it exists, otherwise creates a new tab
             let tab = this.getTab(tabId);
@@ -404,7 +402,7 @@ class TabManager {
             const table = this.tables[this.ungroupedTableId];
             const tbody = table.querySelector("tbody");
 
-            tbody.appendChild(this.createTabRow(tab));
+            tbody.appendChild(this.createRowElement(tab));
 
             resolve();
         })

@@ -1,26 +1,40 @@
+/*
+* Structure of file:
+* - TABS
+* - WINDOWS
+* - CLOSED TABS
+* - SYSTEM
+* 
+* Individual operations are exported as functions.
+* TabManager uses these functions to interact with the database.
+*/
+
 const DB_VERSION = 11;
 
-export { 
+export const Database = {
     DB_VERSION, 
     openDB, 
     saveTab, 
+    updateTab,
     getTab, 
     getAllTabs, 
     getLastTab, 
-    removeTabFromDB, 
+    removeTab, 
     addTabToClosedTabs, 
     getClosedTab, 
     getAllClosedTabs, 
     removeFromClosedTabs, 
     saveWindow, 
-    removeWindowFromDB, 
+    removeWindow, 
     getAllWindows, 
     updateSystemGroupByWindow, 
     getSystemSetting, 
     getTabsByWindowId,
-    getTabById,
     updateSystemFilterByLLMs,
-};
+
+    clearStorage,
+}
+
 
 // IndexedDB helper functions
 function openDB() {
@@ -67,15 +81,53 @@ function openDB() {
     });
 }
 
+
+/*
+*
+* TABS
+*
+*/
 async function saveTab(tab) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction("tabs", "readwrite");
         const store = tx.objectStore("tabs");
-        console.log("saving tab", tab);
         store.put(tab);
         tx.oncomplete = resolve;
         tx.onerror = reject;
+    });
+}
+
+async function updateTab(tabId, newData) {
+    /*
+    * IndexedDB does not support updating a individual fields of a record directly.
+    * Records as a whole are updated. 
+    * Get the object -> modify the field(s) -> put the object back
+    */
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("tabs", "readwrite");
+        const store = tx.objectStore("tabs");
+        const req = store.get(tabId);
+
+        req.onsuccess = () => {
+            const tab = req.result;
+            // tab not found
+            if (!tab) {
+                reject("Tab not found");
+            }
+
+            // tab found, update the tab with new data  
+            for (const key of Object.keys(newData)) {
+                tab[key] = newData[key];
+            }
+
+            store.put(tab);
+
+            tx.oncomplete = resolve;
+            tx.onerror = reject;
+        }
+        req.onerror = reject;
     });
 }
 
@@ -155,7 +207,7 @@ async function getLastTab() {
     });
 }
 
-async function removeTabFromDB(tabId) {
+async function removeTab(tabId) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction("tabs", "readwrite");
@@ -169,6 +221,49 @@ async function removeTabFromDB(tabId) {
     });
 }
 
+
+/*
+*
+* WINDOWS
+*
+*/
+async function saveWindow(windowObj) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("windows", "readwrite");
+
+        tx.objectStore("windows").put(windowObj);
+        tx.oncomplete = resolve;
+        tx.onerror = reject;
+    });
+}
+
+async function removeWindow(windowId) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("windows", "readwrite");
+        tx.objectStore("windows").delete(windowId);
+        tx.oncomplete = resolve;
+        tx.onerror = reject;
+    });
+}
+
+async function getAllWindows() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("windows", "readonly");
+        const req = tx.objectStore("windows").getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = reject;
+    });
+}
+
+
+/*
+* 
+* CLOSED TABS
+*
+*/
 async function addTabToClosedTabs(tab) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -211,36 +306,13 @@ async function removeFromClosedTabs(tabId) {
     });
 }
 
-async function saveWindow(windowObj) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("windows", "readwrite");
 
-        tx.objectStore("windows").put(windowObj);
-        tx.oncomplete = resolve;
-        tx.onerror = reject;
-    });
-}
 
-async function removeWindowFromDB(windowId) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("windows", "readwrite");
-        tx.objectStore("windows").delete(windowId);
-        tx.oncomplete = resolve;
-        tx.onerror = reject;
-    });
-}
-
-async function getAllWindows() {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("windows", "readonly");
-        const req = tx.objectStore("windows").getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = reject;
-    });
-}
+/*
+*
+* SYSTEM SETTINGS
+*
+*/
 
 async function updateSystemGroupByWindow(value = null) {
     const db = await openDB();
@@ -272,20 +344,17 @@ async function updateSystemFilterByLLMs(value = null) {
 
     return new Promise((resolve, reject) => {
         const tx = db.transaction("system", "readwrite");
+        tx.onerror = reject;
         if (value) {
             tx.objectStore("system").put(value, "filterByLLMs");
             tx.oncomplete = () => resolve(value);
-            tx.onerror = reject;
         } else {
             const req = tx.objectStore("system").get("filterByLLMs");
             req.onsuccess = () => {
                 tx.objectStore("system").put(!req.result, "filterByLLMs");
                 tx.oncomplete = () => resolve(!req.result);
-                tx.onerror = reject;
             }
             req.onerror = reject;
-            tx.oncomplete = resolve;
-            tx.onerror = reject;
         }
     })
 }
@@ -300,15 +369,14 @@ async function getSystemSetting(key) {
     });
 }
 
-async function getTabById(id) {
+async function clearStorage() {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-        const tx = db.transaction("tabs", "readonly");
-        const store = tx.objectStore("tabs");
-        const index = store.index("id");
-        const req = index.get(id); // get the first matching record
-
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = reject;
+        const tx = db.transaction(["tabs", "windows", "closedTabs"], "readwrite");
+        tx.objectStore("tabs").clear();
+        tx.objectStore("windows").clear();
+        tx.objectStore("closedTabs").clear();
+        tx.oncomplete = resolve;
+        tx.onerror = reject;
     });
 }
