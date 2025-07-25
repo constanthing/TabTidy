@@ -9,7 +9,7 @@
 * TabManager uses these functions to interact with the database.
 */
 
-const DB_VERSION = 11;
+const DB_VERSION = 14;
 
 export const Database = {
     DB_VERSION, 
@@ -31,7 +31,7 @@ export const Database = {
     getSystemSetting, 
     getTabsByWindowId,
     updateSystemFilterByLLMs,
-
+    updateSystemHistoryView,
     clearStorage,
 }
 
@@ -43,6 +43,11 @@ function openDB() {
         request.onupgradeneeded = function(event) {
             console.log("onupgradeneeded");
             const db = event.target.result;
+
+            // db.deleteObjectStore("tabs");
+            // db.deleteObjectStore("windows");
+            // db.deleteObjectStore("closedTabs");
+
             if (!db.objectStoreNames.contains("tabs")) {
                 const store = db.createObjectStore("tabs", { keyPath: "id" });
                 store.createIndex("id", "id", { unique: false });
@@ -64,7 +69,7 @@ function openDB() {
                 store.createIndex("incognito", "incognito", { unique: false });
             }
             if (!db.objectStoreNames.contains("closedTabs")) {
-                const store = db.createObjectStore("closedTabs", { keyPath: "id" });
+                const store = db.createObjectStore("closedTabs", { keyPath: "index", autoIncrement: true });
                 store.createIndex("id", "id", { unique: false });
                 store.createIndex("windowId", "windowId", { unique: false });
                 store.createIndex("lastVisited", "lastVisited", { unique: false });
@@ -264,23 +269,23 @@ async function getAllWindows() {
 * CLOSED TABS
 *
 */
-async function addTabToClosedTabs(tab) {
+async function addTabToClosedTabs(tab, reason = "manual") {
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction("closedTabs", "readwrite");
-        tab["reason"] = "manual";
-        tab["duplicateIndex"] = -1;
-        tx.objectStore("closedTabs").put(tab);
+        delete tab.index;
+        tab["reason"] = reason;
+        tx.objectStore("closedTabs").add(tab);
         tx.oncomplete = resolve;
         tx.onerror = reject;
     });
 }
 
-async function getClosedTab(tabId) {
+async function getClosedTab(index) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction("closedTabs", "readonly");
-        const req = tx.objectStore("closedTabs").get(tabId);
+        const req = tx.objectStore("closedTabs").get(index);
         req.onsuccess = () => resolve(req.result);
         req.onerror = reject;
     });
@@ -296,11 +301,18 @@ async function getAllClosedTabs() {
     });
 }
 
-async function removeFromClosedTabs(tabId) {
+async function removeFromClosedTabs(tabId, url, title) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction("closedTabs", "readwrite");
-        tx.objectStore("closedTabs").delete(tabId);
+        // get all the tabs with the same id
+        const req = tx.objectStore("closedTabs").get(tabId);
+        req.onsucces = () => {
+            const tab = req.result;
+            if (tab.url === url && tab.title === title) { 
+            }
+        }
+        // tx.objectStore("closedTabs").delete(tabId);
         tx.oncomplete = resolve;
         tx.onerror = reject;
     });
@@ -313,7 +325,6 @@ async function removeFromClosedTabs(tabId) {
 * SYSTEM SETTINGS
 *
 */
-
 async function updateSystemGroupByWindow(value = null) {
     const db = await openDB();
 
@@ -359,6 +370,25 @@ async function updateSystemFilterByLLMs(value = null) {
     })
 }
 
+async function updateSystemHistoryView(value = null) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("system", "readwrite");
+        tx.onerror = reject;
+        if (value) {
+            tx.objectStore("system").put(value, "historyView");
+            tx.oncomplete = () => resolve(value);
+        } else {
+            const req = tx.objectStore("system").get("historyView");
+            req.onsuccess = () => {
+                tx.objectStore("system").put(!req.result, "historyView");
+                tx.oncomplete = () => resolve(!req.result);
+            }
+            req.onerror = reject;
+        }
+    })
+}
+
 async function getSystemSetting(key) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -372,10 +402,11 @@ async function getSystemSetting(key) {
 async function clearStorage() {
     const db = await openDB();
     return new Promise((resolve, reject) => {
-        const tx = db.transaction(["tabs", "windows", "closedTabs"], "readwrite");
+        const tx = db.transaction(["tabs", "windows"], "readwrite");
         tx.objectStore("tabs").clear();
         tx.objectStore("windows").clear();
-        tx.objectStore("closedTabs").clear();
+        // tx.objectStore("closedTabs").clear();
+
         tx.oncomplete = resolve;
         tx.onerror = reject;
     });

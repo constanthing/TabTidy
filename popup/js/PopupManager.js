@@ -1,4 +1,4 @@
-import TabManager from "../background/TabManager.js";
+import TabManager from "../../background/TabManager.js";
 
 const tabManager = new TabManager();
 
@@ -27,10 +27,11 @@ export default class PopupManager {
             const closedTabsArr = await tabManager.getAllClosedTabs();
             this.closedTabs = {};
             for (const tab of closedTabsArr) {
-                this.closedTabs[tab.id] = tab;
+                this.closedTabs[tab.index] = tab;
             }
 
             this.filtered = await tabManager.getSystemSetting("filterByLLMs");
+            this.historyView = await tabManager.getSystemSetting("historyView");
 
             this.searchIndex = new Map();
 
@@ -88,15 +89,25 @@ export default class PopupManager {
     async search(query, fields = ["title", "url", "windowId"]) {
         console.log("=========\n[INFO] search()");
         console.log("[INFO] filtered", this.filtered);
+        console.log("[INFO] historyView", this.historyView);
 
 
         if (query.length == 0) {
-            let openTabs = Object.values(this.tabs);
-            if (this.filtered) {
-                const results = await this.filter(openTabs, []);
-                openTabs = results.openTabs;
+            if (!this.historyView) {
+                let openTabs = Object.values(this.tabs);
+                if (this.filtered) {
+                    const results = await this.filter(openTabs, []);
+                    openTabs = results.openTabs;
+                }
+                return {"openTabs": openTabs, "closedTabs": []};
+            } else {
+                let closedTabs = Object.values(this.closedTabs);
+                if (this.filtered) {
+                    const results = await this.filter([], closedTabs);
+                    closedTabs = results.closedTabs;
+                }
+                return {"openTabs": [], "closedTabs": closedTabs};
             }
-            return {"openTabs": openTabs, "closedTabs": []};
         }
 
         // const cacheKey = `${query}-${fields.join(",")}-${this.filtered}`;
@@ -113,17 +124,24 @@ export default class PopupManager {
         // if no query, return all tabs
         if (!normalizedQuery) return this.tabs;
 
-        let openTabs = Object.values(this.tabs).filter(tab => {
-            return fields.some(field => {
-                try {
-                    let value = tab[field].toLowerCase();
-                    return value.includes(normalizedQuery);
-                } catch(e) {
-                    console.log("Error searching for", field, "in", tab);
-                    return false;
-                }
+        let openTabs = [];
+
+        if (!this.historyView) {
+            /*
+            * No point in searching open tabs if we're in history view!
+            */
+            openTabs = Object.values(this.tabs).filter(tab => {
+                return fields.some(field => {
+                    try {
+                        let value = tab[field].toLowerCase();
+                        return value.includes(normalizedQuery);
+                    } catch(e) {
+                        console.log("Error searching for", field, "in", tab);
+                        return false;
+                    }
+                });
             });
-        });
+        }
 
         let closedTabs = Object.values(this.closedTabs).filter(tab => {
             return fields.some(field => {
@@ -237,6 +255,7 @@ export default class PopupManager {
             for (const closedTab of closedTabs) {
                 const row = this.createRowElement(closedTab);
                 row.classList.add("closed-tab");
+                row.dataset.closedTabIndex = closedTab.index;
                 tbody.appendChild(row);
             }
         }
@@ -250,12 +269,16 @@ export default class PopupManager {
     async filter(openTabs, closedTabs) {
         console.log("[INFO] filtering open tabs", openTabs);
         let t = [];
-        const urls = ["chatgpt.com", "perplexity.ai", "claude.ai", "gemini.google.com/app", "monica.im", "notebooklm.google"];
-        for (const tab of openTabs) {
-            if (urls.some(url => tab.url.includes(url))) {
-                t.push(tab);
+        const urls = ["chatgpt.com", "perplexity.ai", "claude.ai", "gemini.google.com/app", "monica.im", "notebooklm.google", "fireflies.ai", "otter.ai", "wave.co", "copilot.microsoft.com", "inference.cerebras.ai"];
+
+        if (!this.historyView) {
+            for (const tab of openTabs) {
+                if (urls.some(url => tab.url.includes(url))) {
+                    t.push(tab);
+                }
             }
         }
+
         openTabs = t;
         let y = [];
         for (const tab of closedTabs) {

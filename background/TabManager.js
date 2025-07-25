@@ -26,6 +26,10 @@ export default class TabManager {
 
     async removeTab(tabId) {
         const removedTab = await Database.removeTab(tabId);
+        // no need on adding chrome:// tabs to closed tabs
+        if (removedTab.url.includes("chrome://")) {
+            return;
+        }
         await Database.addTabToClosedTabs(removedTab);
     }
 
@@ -86,12 +90,24 @@ export default class TabManager {
     * CLOSED TABS
     *
     */
+   async addTabToClosedTabs(tab, reason = "manual") {
+        console.info("addTabToClosedTabs()", tab, reason);
+        return await Database.addTabToClosedTabs(tab, reason);
+   }
+
     async getAllClosedTabs() {
+        console.info("getAllClosedTabs()");
         return await Database.getAllClosedTabs();
     }
 
-    async getClosedTab(tabId) {
-        return await Database.getClosedTab(tabId);
+    async getClosedTab(tab) {
+        console.info("getClosedTab()", tab);
+        return await Database.getClosedTab(tab);
+    }
+
+    async removeFromClosedTabs(tabId, url, title) {
+        console.info("removeFromClosedTabs()", tabId, url, title);
+        return await Database.removeFromClosedTabs(tabId, url, title);
     }
 
 
@@ -111,6 +127,9 @@ export default class TabManager {
    }
    async updateSystemGroupByWindow(value = null) {
     return await Database.updateSystemGroupByWindow(value);
+   }
+   async updateSystemHistoryView(value = null) {
+    return await Database.updateSystemHistoryView(value);
    }
 
 }

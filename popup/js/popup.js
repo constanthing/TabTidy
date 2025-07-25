@@ -1,10 +1,10 @@
 // default false (tabs are not grouped by windows)
 let SYSTEM_GROUP_BY_WINDOW = false; 
 let SYSTEM_FILTER_BY_LLMS = false;
-
+let SYSTEM_HISTORY_VIEW = false;
 
 import PopupManager from "./PopupManager.js";
-import TabManager from "../background/TabManager.js";
+import TabManager from "../../background/TabManager.js";
 
 const tabManager = new TabManager();
 let popupManager = null;
@@ -13,6 +13,7 @@ let popupManager = null;
 document.addEventListener("DOMContentLoaded", async () => {
     SYSTEM_GROUP_BY_WINDOW = await tabManager.getSystemSetting("groupByWindow");
     SYSTEM_FILTER_BY_LLMS = await tabManager.getSystemSetting("filterByLLMs");
+    SYSTEM_HISTORY_VIEW = await tabManager.getSystemSetting("historyView");
 
     popupManager = await new PopupManager();
 
@@ -112,6 +113,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     */
     const groupByWindowBtn = document.querySelector("#group-by-window-btn");
     const filterByLLMsBtn = document.querySelector("#filter-by-llms-btn");
+    const historyViewBtn = document.querySelector("#history-view-btn");
 
     // initial state of the button based on system setting
     if (SYSTEM_GROUP_BY_WINDOW) {
@@ -123,6 +125,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         const query = searchInput.value;
         const results = await popupManager.search(query);
         await popupManager.hideShowTabs(popupManager.sort(results["openTabs"]), popupManager.sort(results["closedTabs"]));
+    }
+    if (SYSTEM_HISTORY_VIEW) {
+        historyViewBtn.classList.add("active");
+
+        const query = searchInput.value;
+        const results = await popupManager.search(query);
+        await popupManager.hideShowTabs([], popupManager.sort(results["closedTabs"]));
     }
 
     groupByWindowBtn.addEventListener("click", async function(e) {
@@ -167,6 +176,26 @@ document.addEventListener("DOMContentLoaded", async () => {
     //     row.scrollIntoView({ behavior: "smooth", block: "center" });
     //     row.classList.add("active");
     // });
+
+    /*
+    * HISTORY BUTTON
+    */
+    historyViewBtn.addEventListener("click", async function(e) {
+        console.log("[INFO] history btn clicked");
+
+        SYSTEM_HISTORY_VIEW = await tabManager.updateSystemHistoryView();
+        popupManager.historyView = SYSTEM_HISTORY_VIEW;
+        historyViewBtn.classList.toggle("active");
+
+        const query = searchInput.value;
+        const results = await popupManager.search(query);
+        console.log("[INFO] results", results);
+        await popupManager.hideShowTabs(popupManager.sort(results["openTabs"]), popupManager.sort(results["closedTabs"]));
+    });
+
+    /*
+    * SETTINGS BUTTON
+    */
 
     const settingsBtn = document.querySelector("#settings-btn");
     settingsBtn.addEventListener("click", function(e) {

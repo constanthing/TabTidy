@@ -21,7 +21,7 @@ async function initialize() {
 
     console.log(tabs.length, windows.length, closedTabs.length);
 
-    if (tabs.length == 0 && windows.length == 0 && closedTabs.length == 0) {
+    if (tabs.length == 0 && windows.length == 0) {
         // go through every tab and add it to IndexedDB
         const tabs = await chrome.tabs.query({});
 
@@ -47,7 +47,6 @@ async function initialize() {
 * RUNTIME EVENTS
 *
 */
-
 chrome.runtime.onStartup.addListener(async () => {
     // Clear all tabs and windows from IndexedDB
     initialize();
@@ -56,15 +55,16 @@ chrome.runtime.onStartup.addListener(async () => {
 chrome.runtime.onInstalled.addListener(() => {
     initialize();
 });
+/*
+* No official event for when the user closes chrome.
+*/
+
 
 /*
 *
 * TABS EVENTS
 *
 */
-
-
-
 chrome.tabs.onCreated.addListener(async (tab) => {
     console.log("[INFO] onCreated", tab);
     await tabManager.addTab(tab, { lastVisited: null });
@@ -72,26 +72,57 @@ chrome.tabs.onCreated.addListener(async (tab) => {
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    /*
+    * onUpdate fires multiple times for a tab.
+    * each time with diff. properties in the changeInfo object.
+    * the sequence is not always linear! AND the 
+        * 'status': 'complete' event does not guarantee that all 
+        * the properties have already been updated! 
+    * changeInfo.status: 'complete' fires when the main document has finished loading!
+        * so, it doesn't track subresources like favicon, title, etc. that might be dynamically updated!
+        * e.g. chatgpt doesn't update the title immediately, when you send 
+            * a chat it intelligently creates a title based on the conversation
+    * THIS IS ALL TO SAY
+        * do not check for 'status': 'complete' use individual
+        * (if/else if) checks on the changeInfo object! 
+    */ 
+
     console.log("[INFO] onUpdated", tabId, changeInfo, tab);
-    if (changeInfo.status == "complete") {
+
+    const storedTab = await tabManager.getTab(tabId);
+    
+    if (changeInfo.title) {
         await tabManager.updateTab(tabId, {
-            url: tab.url,
-            title: tab.title,
-            favIconUrl: tab.favIconUrl ? tab.favIconUrl : null,
-            lastVisited: new Date().getTime()
-        });
-    } else if (changeInfo.title) {
-        await tabManager.updateTab(tabId, {
-            title: tab.title
+            title: changeInfo.title
         });
     } else if (changeInfo.favIconUrl) {
         await tabManager.updateTab(tabId, {
-            favIconUrl: tab.favIconUrl ? tab.favIconUrl : null
+            favIconUrl: changeInfo.favIconUrl ? changeInfo.favIconUrl : null
         });
     } else if (changeInfo.url) {
+        console.log("[INFO] url changed", changeInfo.url);
+        if (storedTab.url && !storedTab.url.includes("chrome://")) {
+            storedTab.lastVisited = new Date().getTime();
+            await tabManager.addTabToClosedTabs(storedTab, "url-change");
+        }
+
         await tabManager.updateTab(tabId, {
-            url: tab.url,
+            url: changeInfo.url,
         });
+    } else if (changeInfo.status == "complete") {
+        const newData = { };
+        if (tab.url != storedTab.url) {
+            newData.url = tab.url;
+        }
+        if (tab.title != storedTab.title) {
+            newData.title = tab.title;
+        }
+        if (tab.favIconUrl != storedTab.favIconUrl) {
+            newData.favIconUrl = tab.favIconUrl;
+        }
+        if (Object.keys(newData).length > 0) {
+            await tabManager.updateTab(tabId, newData);
+        }
     }
 });
 
@@ -221,7 +252,6 @@ chrome.commands.onCommand.addListener(async (command) => {
 * MESSAGES
 *
 */
-
 chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     if (message.type == "open-home") {
         chrome.tabs.create({ url: chrome.runtime.getURL("home.html") });
