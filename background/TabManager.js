@@ -42,6 +42,10 @@ export default class TabManager {
         return tabs.length;
     }
 
+    async getTabsByWindowId(windowId) {
+        return await Database.getTabsByWindowId(windowId);
+    }
+
 
     /*
     *
@@ -66,6 +70,10 @@ export default class TabManager {
         await Database.saveWindow(windowObj);
     }
 
+    async updateWindow(windowId, newData) {
+        await Database.updateWindow(windowId, newData);
+    }
+
     async getWindow(windowId) {
         const window = await Database.getWindow(windowId);
         return window;
@@ -82,6 +90,10 @@ export default class TabManager {
     async getWindowsLength() {
         const windows = await Database.getAllWindows();
         return windows.length;
+    }
+
+    async getWindowsByLength(length) {
+        return await Database.getWindowsByLength(length);
     }
 
 
@@ -109,6 +121,39 @@ export default class TabManager {
         console.info("removeFromClosedTabs()", tabId, url, title);
         return await Database.removeFromClosedTabs(tabId, url, title);
     }
+
+
+    /*
+    *
+    * LAST SESSION
+    *
+    */
+    async addLastSession(data) {
+        return await Database.addLastSession(data);
+    }
+    async getAllLastSessions() {
+        return await Database.getAllLastSessions();
+    }
+    async getLastSessionsByTabsLength(tabsLength) {
+        return await Database.getLastSessionsByTabsLength(tabsLength);
+    }
+    async removeLastSession(index) {
+        console.log("[LAST SESSION] removeLastSession()", index)
+        return await Database.removeLastSession(index);
+    }
+
+
+    /*
+    *
+    * OLD SESSIONS
+    * 
+    */
+   async addOldSession(data) {
+    return await Database.addOldSession(data);
+   }
+   async getAllOldSessions() {
+    return await Database.getAllOldSessions();
+   }
 
 
     /*

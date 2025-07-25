@@ -14,35 +14,35 @@ async function initialize() {
 
     const tabs = await tabManager.getAllTabs();
     const windows = await tabManager.getAllWindows();
-    const closedTabs = await tabManager.getAllClosedTabs();
+    // const closedTabs = await tabManager.getAllClosedTabs();
 
-    await tabManager.clearStorage();
+    // await tabManager.clearStorage();
 
-    console.log(tabs.length, windows.length, closedTabs.length);
+    console.log(tabs.length, windows.length);
 
-    if (tabs.length == 0 && windows.length == 0) {
-        // go through every tab and add it to IndexedDB
-        const tabs = await chrome.tabs.query({});
+    // if (tabs.length == 0 && windows.length == 0) {
+    //     // go through every tab and add it to IndexedDB
+    //     const tabs = await chrome.tabs.query({});
 
-        for (const tab of tabs) {
-            await tabManager.addTab(tab, { lastVisited: null });
-        }
-        await tabManager.setBadgeLength();
+    //     for (const tab of tabs) {
+    //         await tabManager.addTab(tab, { lastVisited: null });
+    //     }
+    //     await tabManager.setBadgeLength();
 
-        // go through every window and add it to IndexedDB
-        chrome.windows.getAll({}, async function (windows) {
-            for (const window of windows) {
-                await tabManager.addWindow(window);
-            }
-        });
-    }
+    //     // go through every window and add it to IndexedDB
+    //     chrome.windows.getAll({}, async function (windows) {
+    //         for (const window of windows) {
+    //             await tabManager.addWindow(window);
+    //         }
+    //     });
+    // }
 
     await tabManager.setBadgeLength();
 }
 
 
-
 let timeSinceWindowCreated = null;
+let timeSinceTabCreated = null;
 let tabIndex = 0;
 /*
 *
@@ -55,6 +55,33 @@ chrome.runtime.onStartup.addListener(async () => {
 
     console.log("[INFO] onStartup");
 
+
+    // check for any existing windows/tabs and move to lastSession
+    const windows = await tabManager.getAllWindows();
+
+    console.log("[WINDOWS] windows", windows);
+
+    // going trough any (potential) window and adding it to lastSession
+    for (const window of windows) {
+        const tabsOfWindow = await tabManager.getTabsByWindowId(window.windowId);
+        await tabManager.addLastSession({
+            windowId: window.windowId,
+            title: window.title,
+            tabs: tabsOfWindow,
+            tabsLength: tabsOfWindow.length
+        });
+        await tabManager.removeWindow(window.windowId);
+    }
+
+    const tabs = await tabManager.getAllTabs();
+    for (const tab of tabs) {
+        await tabManager.removeTab(tab.id);
+    }
+
+    console.log("[LAST SESSIONS] last sessions", await tabManager.getAllLastSessions());
+
+    // now, tabs, windows should be empty
+    // now it's ready to start a new session / restore tabs/windows from lastSession (if any)
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -76,9 +103,17 @@ chrome.tabs.onCreated.addListener(async (tab) => {
     console.log("[INFO] time since window created", (created - timeSinceWindowCreated) / 1000, "seconds", (created - timeSinceWindowCreated), "ms");
     console.log("[INFO] tabIndex", tabIndex);
 
+    if (timeSinceWindowCreated && (created - timeSinceWindowCreated) < 100) {
+        console.log("[INFO] tab was created within 100ms of window creation. thus, it was restored.");
+    } else {
+        // if tab was created 1 second after the windowWasCreated then it was user created 
+        console.log("[INFO] user created tab");
+        // now all we have to check if the tab was restored via alt-shift-t
+        await tabManager.addTab(tab, { lastVisited: null });
+        await tabManager.setBadgeLength();
+    }
+
     tabIndex++;
-    await tabManager.addTab(tab, { lastVisited: null });
-    await tabManager.setBadgeLength();
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
@@ -100,6 +135,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     console.log("[INFO] onUpdated", tabId, changeInfo, tab);
 
     const storedTab = await tabManager.getTab(tabId);
+
+    if (!storedTab) {
+        return;
+    }
     
     if (changeInfo.title) {
         await tabManager.updateTab(tabId, {
@@ -195,21 +234,112 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     // });
 });
 
+function normalizeUrl(url) {
+    url = new URL(url);
+    // remove search parameters
+    url.search = "";
+    // remove hash(s)
+    url.hash = "";
+    return url.toString();
+}
+
+async function identifyWindow(window) {
+
+ // this always runs after the tabs have been created for the specific window!
+    const tabs = await chrome.tabs.query({windowId: window.id})
+
+    // there should always be at least 1 tab in the window
+    // - maybe we filter this ? so that if it's just a bunch of new tabs, we don't compare with lastSession 
+    if (tabs) {
+        console.log("[IMP] tabs", tabs, tabs.length, new Date().getTime() - timeSinceWindowCreated, "ms");
+        // const windows = await tabManager.getAllWindows();
+        const lastSessionsWithSameTabsLength = await tabManager.getLastSessionsByTabsLength(tabs.length);
+        console.log("[LAST SESSIONS] with same tabs length", lastSessionsWithSameTabsLength);
+
+        // if no last sessions with same tabs length, assume window/tabs are new
+        // - add window to storage
+        // - add tabs to storage
+        if (lastSessionsWithSameTabsLength.length == 0) {
+            console.log("[INFO] no last sessions with same tabs length found", window, tabs);
+
+            await tabManager.addWindow(window);
+            for (const tab of tabs) {
+                // @TODO: CHECK THIS ! 
+                // why am i setting window.id ? isn't it already set to new window ? 
+                await tabManager.addTab(tab, { windowId: window.id, lastVisited: null });
+            }
+        } else {
+            console.log("[INFO] last sessions with same tabs length found", lastSessionsWithSameTabsLength.length);
+
+            let lastSessionFound = false;
+
+            // if last sessions with same tabs length, then we need to compare the tabs
+            for (const lastSession of lastSessionsWithSameTabsLength) {
+                const sameTabs = lastSession.tabsLength; 
+                const newTabs = [];
+
+                for (let i = 0; i < tabs.length; i++) {
+                    const lastSessionTab = lastSession.tabs[i];
+                    // normalizing urls to remove search parameters and hash(s)
+                    if (normalizeUrl(lastSessionTab.url) != normalizeUrl(tabs[i].url)) {
+                        // if tab is not the same as one in lastSession, then we add the new tab instead.
+                        sameTabs--;
+                        tabs[i].windowId = window.id;
+
+                        newTabs.push(tabs[i]);
+                    } else {
+                        // preserving the data from the tabs in lastSession
+
+                        // updating the old windowId to the new windowId
+                        lastSessionTab.windowId = window.id;
+                        lastSessionTab.id = tabs[i].id;
+
+                        newTabs.push(lastSessionTab);
+                    }
+                }
+
+                if (sameTabs / lastSession.tabsLength >= 0.8) {
+                    console.log("[SUCCESS] last session with same tabs(>=80%) found", lastSession);
+                    lastSessionFound = true;
+
+                    // add the window
+                    await tabManager.addWindow(window);
+
+                    // if more than 80% of the tabs are the same, then we can assume this is the same window
+                    // add newTabs to storage
+                    for (const tab of newTabs) {
+                        await tabManager.addTab(tab, { });
+                    }
+                    // remove lastSession from storage
+                    await tabManager.removeLastSession(lastSession.index);
+                    await tabManager.addOldSession(lastSession);
+                } else {
+                    // continue looking 
+                    console.log("[FAIL] last session with same tabs(<80%) found", lastSession);
+                }
+            }
+
+            if (!lastSessionFound) {
+                // treat window/tabs of window as new 
+                await tabManager.addWindow(window);
+                for (const tab of tabs) {
+                    await tabManager.addTab(tab, { windowId: window.id, lastVisited: null });
+                }
+            }
+        }
+    } else {
+        console.log("[IMP] no tabs found", new Date().getTime() - timeSinceWindowCreated, "ms");
+    }
+
+}
+
 chrome.windows.onCreated.addListener(async (window) => {
     console.log("[INFO] windows.onCreated", window);
 
     timeSinceWindowCreated = new Date().getTime();
     console.log("[INFO] first window created", timeSinceWindowCreated, "ms", (new Date(timeSinceWindowCreated)).toISOString());
 
-    await tabManager.addWindow(window);
-    chrome.tabs.query({ windowId: window.id }, async function (windowTabs) {
-        for (const windowTab of windowTabs) {
-            const tab = await tabManager.getTab(windowTab.id);
-            if (tab) {
-                await tabManager.addTab(tab, { windowId: window.id });
-            }
-        }
-    });
+    identifyWindow(window);
 });
 
 chrome.windows.onRemoved.addListener(async (windowId) => {
@@ -218,16 +348,16 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
     * As a result, the window will not have any tabs in it. Hence, the if statement check.
     */
     console.log("[INFO] windows.onRemoved", windowId);
-    await tabManager.removeWindow(windowId);
-    const tabIds = closedWindowTabs[windowId];
-    console.log(tabIds)
-    if (tabIds) {
-        for (const tabId of tabIds) {
-            await tabManager.removeTab(tabId);
-        }
-        delete closedWindowTabs[windowId];
-    }
-    await tabManager.setBadgeLength();
+    // await tabManager.removeWindow(windowId);
+    // const tabIds = closedWindowTabs[windowId];
+    // console.log(tabIds)
+    // if (tabIds) {
+    //     for (const tabId of tabIds) {
+    //         await tabManager.removeTab(tabId);
+    //     }
+    //     delete closedWindowTabs[windowId];
+    // }
+    // await tabManager.setBadgeLength();
 });
 
 

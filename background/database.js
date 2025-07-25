@@ -9,30 +9,50 @@
 * TabManager uses these functions to interact with the database.
 */
 
-const DB_VERSION = 14;
+const DB_VERSION = 15;
 
 export const Database = {
     DB_VERSION, 
     openDB, 
+
+    // tabs
     saveTab, 
     updateTab,
     getTab, 
     getAllTabs, 
     getLastTab, 
     removeTab, 
+
+    // closed tabs
     addTabToClosedTabs, 
     getClosedTab, 
     getAllClosedTabs, 
     removeFromClosedTabs, 
+
+    // windows
     saveWindow, 
+    updateWindow,
+    getWindowsByLength,
     removeWindow, 
     getAllWindows, 
-    updateSystemGroupByWindow, 
-    getSystemSetting, 
     getTabsByWindowId,
+
+    // system settings
+    getSystemSetting, 
+    updateSystemGroupByWindow, 
     updateSystemFilterByLLMs,
     updateSystemHistoryView,
     clearStorage,
+
+    // last sesssion
+    addLastSession,
+    getAllLastSessions,
+    getLastSessionsByTabsLength,
+    removeLastSession,
+
+    // old sessions
+    addOldSession,
+    getAllOldSessions,
 }
 
 
@@ -79,6 +99,29 @@ function openDB() {
             }
             if (!db.objectStoreNames.contains("system")) {
                 db.createObjectStore("system");
+            }
+
+
+            /*
+            * lastSession will contain windows, tabs that were open in the previous session.
+            * When chrome starts up again. We check the tabs/windows in lastSession.
+            * If there are windows that match. We add the window/tabs to the current session.
+            * Removing it from lastSession.
+            * Then, at the end, we add the remaining lastSession (with remaining tabs/windows) to oldSessions.
+            */
+            if (!db.objectStoreNames.contains("lastSession")) {
+                const store = db.createObjectStore("lastSession", { keyPath: "index", autoIncrement: true });
+                store.createIndex("name", "name", { unique: false });
+                store.createIndex("windows", "windows", { unique: false });
+                store.createIndex("tabs", "tabs", { unique: false });
+                store.createIndex("tabsLength", "tabsLength", { unique: false });
+            }
+            if (!db.objectStoreNames.contains("oldSessions")) {
+                const store = db.createObjectStore("oldSessions", { keyPath: "index", autoIncrement: true });
+                store.createIndex("name", "name", { unique: false });
+                store.createIndex("windows", "windows", { unique: false });
+                store.createIndex("tabs", "tabs", { unique: false });
+                store.createIndex("tabsLength", "tabsLength", { unique: false });
             }
         };
     request.onsuccess = () => resolve(request.result);
@@ -243,6 +286,28 @@ async function saveWindow(windowObj) {
     });
 }
 
+async function updateWindow(windowId, newData) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("windows", "readwrite");
+        const store = tx.objectStore("windows");
+        const req = store.get(windowId);
+
+        req.onsuccess = () => {
+            const window = req.result;
+            for (const key of Object.keys(newData)) {
+                window[key] = newData[key];
+            }
+
+            store.put(window);
+
+            tx.oncomplete = resolve;
+            tx.onerror = reject;
+        }
+        req.onerror = reject;
+    });
+}
+
 async function removeWindow(windowId) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -250,6 +315,26 @@ async function removeWindow(windowId) {
         tx.objectStore("windows").delete(windowId);
         tx.oncomplete = resolve;
         tx.onerror = reject;
+    });
+}
+
+async function getWindowsByLength(length) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("windows", "readonly");
+        const store = tx.objectStore("windows");
+        const index = store.index("tabsLength");
+        const cursor = index.openCursor(length);
+        const windows = [];
+        cursor.onsuccess = () => {
+            if (cursor.result) {
+                windows.push(cursor.result.value);
+                cursor.result.continue();
+            } else {
+                resolve(windows);
+            }
+        };
+        cursor.onerror = reject;
     });
 }
 
@@ -409,5 +494,90 @@ async function clearStorage() {
 
         tx.oncomplete = resolve;
         tx.onerror = reject;
+    });
+}
+
+
+
+/*
+*
+* Last Session
+*
+*/
+async function addLastSession(data) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("lastSession", "readwrite");
+        const store = tx.objectStore("lastSession");
+        store.add(data);
+        tx.oncomplete = resolve;
+        tx.onerror = reject;
+    });
+} 
+
+async function getAllLastSessions() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("lastSession", "readonly");
+        const req = tx.objectStore("lastSession").getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = reject;
+    });
+}
+
+async function getLastSessionsByTabsLength(tabsLength) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("lastSession", "readonly");
+        const store = tx.objectStore("lastSession");
+        const index = store.index("tabsLength");
+        const req = index.openCursor(tabsLength);
+        const sessions = [];
+        req.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+                sessions.push(cursor.value);
+                cursor.continue();
+            } else {
+                resolve(sessions);
+            }
+        };
+        req.onerror = reject;
+    });
+}
+
+async function removeLastSession(index) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("lastSession", "readwrite");
+        tx.objectStore("lastSession").delete(index);
+        tx.oncomplete = resolve;
+        tx.onerror = reject;
+    });
+}
+
+/*
+*
+* OLD SESSIONS
+*
+*/
+async function addOldSession(lastSession) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("oldSessions", "readwrite");
+        const store = tx.objectStore("oldSessions");
+        lastSession.name = new Date().toLocaleDateString();
+        store.put(lastSession);
+        tx.oncomplete = resolve;
+        tx.onerror = reject;
+    });
+}
+async function getAllOldSessions() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction("oldSessions", "readonly");
+        const req = tx.objectStore("oldSessions").getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = reject;
     });
 }
