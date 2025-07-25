@@ -26,11 +26,16 @@ export default class TabManager {
 
     async removeTab(tabId) {
         const removedTab = await Database.removeTab(tabId);
-        // no need on adding chrome:// tabs to closed tabs
-        if (removedTab.url.includes("chrome://")) {
-            return;
+
+        if (removedTab) {
+            // no need on adding chrome:// tabs to closed tabs
+            if (removedTab.url.includes("chrome://")) {
+                return;
+            }
+            await Database.addTabToClosedTabs(removedTab);
+        } else {
+            console.log("[INFO] tab not found in removeTab()", tabId);
         }
-        await Database.addTabToClosedTabs(removedTab);
     }
 
     async getAllTabs() {
@@ -167,14 +172,8 @@ export default class TabManager {
    async getSystemSetting(key) {
     return await Database.getSystemSetting(key);
    }
-   async updateSystemFilterByLLMs(value = null) {
-    return await Database.updateSystemFilterByLLMs(value);
-   }
-   async updateSystemGroupByWindow(value = null) {
-    return await Database.updateSystemGroupByWindow(value);
-   }
-   async updateSystemHistoryView(value = null) {
-    return await Database.updateSystemHistoryView(value);
+   async updateSystemSetting(key, value = null) {
+    return await Database.updateSystemSetting(key, value);
    }
 
 }

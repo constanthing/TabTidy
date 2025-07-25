@@ -44,6 +44,7 @@ async function initialize() {
 let timeSinceWindowCreated = null;
 let timeSinceTabCreated = null;
 let tabIndex = 0;
+let newSession = false;
 /*
 *
 * RUNTIME EVENTS
@@ -55,30 +56,10 @@ chrome.runtime.onStartup.addListener(async () => {
 
     console.log("[INFO] onStartup");
 
+    await tabManager.updateSystemSetting("newSession", true);
+    newSession = true;
 
-    // check for any existing windows/tabs and move to lastSession
-    const windows = await tabManager.getAllWindows();
 
-    console.log("[WINDOWS] windows", windows);
-
-    // going trough any (potential) window and adding it to lastSession
-    for (const window of windows) {
-        const tabsOfWindow = await tabManager.getTabsByWindowId(window.windowId);
-        await tabManager.addLastSession({
-            windowId: window.windowId,
-            title: window.title,
-            tabs: tabsOfWindow,
-            tabsLength: tabsOfWindow.length
-        });
-        await tabManager.removeWindow(window.windowId);
-    }
-
-    const tabs = await tabManager.getAllTabs();
-    for (const tab of tabs) {
-        await tabManager.removeTab(tab.id);
-    }
-
-    console.log("[LAST SESSIONS] last sessions", await tabManager.getAllLastSessions());
 
     // now, tabs, windows should be empty
     // now it's ready to start a new session / restore tabs/windows from lastSession (if any)
@@ -248,6 +229,34 @@ async function identifyWindow(window) {
  // this always runs after the tabs have been created for the specific window!
     const tabs = await chrome.tabs.query({windowId: window.id})
 
+    if (await tabManager.getSystemSetting("newSession") || newSession) {
+        // check for any existing windows/tabs and move to lastSession
+        const windows = await tabManager.getAllWindows();
+
+        console.log("[WINDOWS] windows", windows);
+
+        // going trough any (potential) window and adding it to lastSession
+        for (const window of windows) {
+            const tabsOfWindow = await tabManager.getTabsByWindowId(window.windowId);
+            await tabManager.addLastSession({
+                windowId: window.windowId,
+                title: window.title,
+                tabs: tabsOfWindow,
+                tabsLength: tabsOfWindow.length
+            });
+            await tabManager.removeWindow(window.windowId);
+        }
+
+        const tabs = await tabManager.getAllTabs();
+        for (const tab of tabs) {
+            await tabManager.removeTab(tab.id);
+        }
+
+        console.log("[LAST SESSIONS] last sessions", await tabManager.getAllLastSessions());
+
+        await tabManager.updateSystemSetting("newSession", false);
+    }
+
     // there should always be at least 1 tab in the window
     // - maybe we filter this ? so that if it's just a bunch of new tabs, we don't compare with lastSession 
     if (tabs) {
@@ -339,7 +348,8 @@ chrome.windows.onCreated.addListener(async (window) => {
     timeSinceWindowCreated = new Date().getTime();
     console.log("[INFO] first window created", timeSinceWindowCreated, "ms", (new Date(timeSinceWindowCreated)).toISOString());
 
-    identifyWindow(window);
+    await identifyWindow(window);
+    await tabManager.setBadgeLength();
 });
 
 chrome.windows.onRemoved.addListener(async (windowId) => {

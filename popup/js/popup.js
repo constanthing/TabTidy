@@ -136,7 +136,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     groupByWindowBtn.addEventListener("click", async function(e) {
         try {
-            SYSTEM_GROUP_BY_WINDOW = await tabManager.updateSystemGroupByWindow();
+            SYSTEM_GROUP_BY_WINDOW = await tabManager.updateSystemSetting("groupByWindow");
             groupByWindowBtn.classList.toggle("active");
 
             await popupManager.loadTabs();
@@ -183,7 +183,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     historyViewBtn.addEventListener("click", async function(e) {
         console.log("[INFO] history btn clicked");
 
-        SYSTEM_HISTORY_VIEW = await tabManager.updateSystemHistoryView();
+        SYSTEM_HISTORY_VIEW = await tabManager.updateSystemSetting("historyView");
         popupManager.historyView = SYSTEM_HISTORY_VIEW;
         historyViewBtn.classList.toggle("active");
 
@@ -204,7 +204,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     filterByLLMsBtn.addEventListener("click", async function(e) {
         // toggle the filter by LLMs value in storage
-        SYSTEM_FILTER_BY_LLMS = await tabManager.updateSystemFilterByLLMs();
+        SYSTEM_FILTER_BY_LLMS = await tabManager.updateSystemSetting("filterByLLMs");
         popupManager.filtered = SYSTEM_FILTER_BY_LLMS;
         filterByLLMsBtn.classList.toggle("active");
 

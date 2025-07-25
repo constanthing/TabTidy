@@ -39,9 +39,7 @@ export const Database = {
 
     // system settings
     getSystemSetting, 
-    updateSystemGroupByWindow, 
-    updateSystemFilterByLLMs,
-    updateSystemHistoryView,
+    updateSystemSetting,
     clearStorage,
 
     // last sesssion
@@ -410,64 +408,25 @@ async function removeFromClosedTabs(tabId, url, title) {
 * SYSTEM SETTINGS
 *
 */
-async function updateSystemGroupByWindow(value = null) {
+async function updateSystemSetting(key, value = null) {
     const db = await openDB();
 
     return new Promise((resolve, reject) => {
         if (value) {
             // update the value to new value
             const tx = db.transaction("system", "readwrite");
-            tx.objectStore("system").put(value, "groupByWindow");
+            tx.objectStore("system").put(value, key);
             tx.oncomplete = resolve;
             tx.onerror = reject;
         } else {
             // toggle the value
             const tx = db.transaction("system", "readwrite");
-            const req = tx.objectStore("system").get("groupByWindow");
+            const req = tx.objectStore("system").get(key);
             req.onsuccess = () => {
-                tx.objectStore("system").put(!req.result, "groupByWindow");
-                console.log("Toggled groupByWindow to", !req.result);
+                tx.objectStore("system").put(!req.result, key);
+                console.log("Toggled", key, "to", !req.result);
                 tx.oncomplete = () => resolve(!req.result);
                 tx.onerror = reject;
-            }
-            req.onerror = reject;
-        }
-    })
-}
-
-async function updateSystemFilterByLLMs(value = null) {
-    const db = await openDB();
-
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("system", "readwrite");
-        tx.onerror = reject;
-        if (value) {
-            tx.objectStore("system").put(value, "filterByLLMs");
-            tx.oncomplete = () => resolve(value);
-        } else {
-            const req = tx.objectStore("system").get("filterByLLMs");
-            req.onsuccess = () => {
-                tx.objectStore("system").put(!req.result, "filterByLLMs");
-                tx.oncomplete = () => resolve(!req.result);
-            }
-            req.onerror = reject;
-        }
-    })
-}
-
-async function updateSystemHistoryView(value = null) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction("system", "readwrite");
-        tx.onerror = reject;
-        if (value) {
-            tx.objectStore("system").put(value, "historyView");
-            tx.oncomplete = () => resolve(value);
-        } else {
-            const req = tx.objectStore("system").get("historyView");
-            req.onsuccess = () => {
-                tx.objectStore("system").put(!req.result, "historyView");
-                tx.oncomplete = () => resolve(!req.result);
             }
             req.onerror = reject;
         }
