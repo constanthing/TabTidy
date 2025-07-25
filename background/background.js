@@ -12,7 +12,6 @@ async function initialize() {
         "windows": null,
     })
 
-
     const tabs = await tabManager.getAllTabs();
     const windows = await tabManager.getAllWindows();
     const closedTabs = await tabManager.getAllClosedTabs();
@@ -42,6 +41,9 @@ async function initialize() {
 }
 
 
+
+let timeSinceWindowCreated = null;
+let tabIndex = 0;
 /*
 *
 * RUNTIME EVENTS
@@ -50,6 +52,9 @@ async function initialize() {
 chrome.runtime.onStartup.addListener(async () => {
     // Clear all tabs and windows from IndexedDB
     initialize();
+
+    console.log("[INFO] onStartup");
+
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -66,7 +71,12 @@ chrome.runtime.onInstalled.addListener(() => {
 *
 */
 chrome.tabs.onCreated.addListener(async (tab) => {
-    console.log("[INFO] onCreated", tab);
+    console.log("[INFO] onCreated", tab.url);
+    const created = new Date().getTime();
+    console.log("[INFO] time since window created", (created - timeSinceWindowCreated) / 1000, "seconds", (created - timeSinceWindowCreated), "ms");
+    console.log("[INFO] tabIndex", tabIndex);
+
+    tabIndex++;
     await tabManager.addTab(tab, { lastVisited: null });
     await tabManager.setBadgeLength();
 });
@@ -187,6 +197,10 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 
 chrome.windows.onCreated.addListener(async (window) => {
     console.log("[INFO] windows.onCreated", window);
+
+    timeSinceWindowCreated = new Date().getTime();
+    console.log("[INFO] first window created", timeSinceWindowCreated, "ms", (new Date(timeSinceWindowCreated)).toISOString());
+
     await tabManager.addWindow(window);
     chrome.tabs.query({ windowId: window.id }, async function (windowTabs) {
         for (const windowTab of windowTabs) {
