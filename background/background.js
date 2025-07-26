@@ -59,8 +59,6 @@ chrome.runtime.onStartup.addListener(async () => {
     await tabManager.updateSystemSetting("newSession", true);
     newSession = true;
 
-
-
     // now, tabs, windows should be empty
     // now it's ready to start a new session / restore tabs/windows from lastSession (if any)
 });
@@ -132,8 +130,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     } else if (changeInfo.url) {
         console.log("[INFO] url changed", changeInfo.url);
         if (storedTab.url && !storedTab.url.includes("chrome://")) {
-            storedTab.lastVisited = new Date().getTime();
-            await tabManager.addTabToClosedTabs(storedTab, "url-change");
+            if (storedTab.url != changeInfo.url) {
+                console.log(storedTab.url, changeInfo.url);
+                storedTab.lastVisited = new Date().getTime();
+                await tabManager.addTabToClosedTabs(storedTab, "url-change");
+            }
         }
 
         await tabManager.updateTab(tabId, {
@@ -226,8 +227,8 @@ function normalizeUrl(url) {
 
 async function identifyWindow(window) {
 
- // this always runs after the tabs have been created for the specific window!
-    const tabs = await chrome.tabs.query({windowId: window.id})
+    // this always runs after the tabs have been created for the specific window!
+    const tabs = await chrome.tabs.query({windowId: window.id});
 
     if (await tabManager.getSystemSetting("newSession") || newSession) {
         // remove all last sessions (these are old that were created before this new session)
@@ -271,7 +272,11 @@ async function identifyWindow(window) {
     if (tabs) {
         console.log("[IMP] tabs", tabs, tabs.length, new Date().getTime() - timeSinceWindowCreated, "ms");
         // const windows = await tabManager.getAllWindows();
-        const lastSessionsWithSameTabsLength = await tabManager.getLastSessionsByTabsLength(tabs.length);
+        let lastSessionsWithSameTabsLength = await tabManager.getLastSessionsByTabsLength(tabs.length);
+
+        // sort based on index 
+        lastSessionsWithSameTabsLength = lastSessionsWithSameTabsLength.sort((a, b) => a.index - b.index);
+
         console.log("[LAST SESSIONS] with same tabs length", lastSessionsWithSameTabsLength);
 
         // if no last sessions with same tabs length, assume window/tabs are new
@@ -293,7 +298,7 @@ async function identifyWindow(window) {
 
             // if last sessions with same tabs length, then we need to compare the tabs
             for (const lastSession of lastSessionsWithSameTabsLength) {
-                const sameTabs = lastSession.tabsLength; 
+                let sameTabs = lastSession.tabsLength; 
                 const newTabs = [];
 
                 for (let i = 0; i < tabs.length; i++) {

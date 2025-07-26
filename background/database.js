@@ -412,7 +412,7 @@ async function updateSystemSetting(key, value = null) {
     const db = await openDB();
 
     return new Promise((resolve, reject) => {
-        if (value) {
+        if (value != null) {
             // update the value to new value
             const tx = db.transaction("system", "readwrite");
             tx.objectStore("system").put(value, key);

@@ -99,7 +99,17 @@ export default class PopupManager {
                     const results = await this.filter(openTabs, []);
                     openTabs = results.openTabs;
                 }
-                return {"openTabs": openTabs, "closedTabs": []};
+
+                const SYSTEM_ALWAYS_SHOW_CLOSED_TABS = await tabManager.getSystemSetting("alwaysShowClosedTabs");
+
+                let closedTabs = [];
+
+                if (SYSTEM_ALWAYS_SHOW_CLOSED_TABS) {
+                    console.log("[SEARCH] SYSTEM_ALWAYS_SHOW_CLOSED_TABS", SYSTEM_ALWAYS_SHOW_CLOSED_TABS);
+                    closedTabs = this.sort(Object.values(this.closedTabs));
+                }
+
+                return {"openTabs": openTabs, "closedTabs": closedTabs};
             } else {
                 let closedTabs = Object.values(this.closedTabs);
                 if (this.filtered) {
@@ -169,11 +179,14 @@ export default class PopupManager {
     }
 
     sort(tabs, sortBy = "lastVisited", sortDescending = true) {
+
+        if (typeof(tabs) == "object") {
+            tabs = Object.values(tabs);
+        }
+
         if (sortBy == "lastVisited") {
             // Convert object to array
-            const tabsArray = Object.values(tabs);
-            
-            return tabsArray.sort((a, b) => {
+            return tabs.sort((a, b) => {
                 // Handle null/undefined lastVisited
                 const aTime = a.lastVisited || 0;
                 const bTime = b.lastVisited || 0;
@@ -300,10 +313,17 @@ export default class PopupManager {
         this.tabTablesContainer.innerHTML = "";
         this.tables = {};
 
+        let tabsToShow = [...Object.values(this.tabs)];
 
-        let tabs = this.sort(this.tabs, sortBy, sortDescending);
+        // let SYSTEM_ALWAYS_SHOW_CLOSED_TABS = await tabManager.getSystemSetting("alwaysShowClosedTabs");
+        // if (SYSTEM_ALWAYS_SHOW_CLOSED_TABS) {
+        //     tabsToShow = [...tabsToShow, ...Object.values(this.closedTabs)];
+        // }
+
+        let tabs = this.sort(tabsToShow, sortBy, sortDescending);
 
         const SYSTEM_GROUP_BY_WINDOW = await tabManager.getSystemSetting("groupByWindow");
+        const SYSTEM_ALWAYS_SHOW_CLOSED_TABS = await tabManager.getSystemSetting("alwaysShowClosedTabs");
 
         tabs.forEach(async (tab) => {
             if (SYSTEM_GROUP_BY_WINDOW) {
@@ -313,9 +333,30 @@ export default class PopupManager {
             }
         });
 
-
         if (SYSTEM_GROUP_BY_WINDOW) {
             this.tabTablesContainer.appendChild(this.recentlyClosedTable);
+        }
+
+        if (SYSTEM_ALWAYS_SHOW_CLOSED_TABS) {
+            console.log("SYSTEM_ALWAYS_SHOW_CLOSED_TABS", SYSTEM_ALWAYS_SHOW_CLOSED_TABS);
+
+            this.recentlyClosedTable.classList.remove("hidden");
+            const closedTabs = this.sort(this.closedTabs);
+
+            if (closedTabs?.length > 0) {
+                let tbody = this.tabTablesContainer.querySelector("tbody");
+                if (SYSTEM_GROUP_BY_WINDOW) {
+                    this.recentlyClosedTable.classList.remove("hidden");
+                    tbody = this.recentlyClosedTable.querySelector("tbody");
+                }
+
+                for (const closedTab of closedTabs) {
+                    const row = this.createRowElement(closedTab);
+                    row.classList.add("closed-tab");
+                    row.dataset.closedTabIndex = closedTab.index;
+                    tbody.appendChild(row);
+                }
+            }
         }
     }
 
@@ -329,17 +370,33 @@ export default class PopupManager {
 
         const duplicate = tab.duplicateIndex && tab.duplicateIndex > -1 ? `<span class="tab-duplicate">${tab.duplicateIndex}</span>` : "";
 
-        row.innerHTML = `
-            <td class="tab-title"><span>${ duplicate }<span>${ tab.favIconUrl ? `<img src="${tab.favIconUrl}" class="tab-favicon" />` : "" } ${tab.title}</span></span><span class="tab-url">${tab.url}</span></td> 
-            <td class="tab-last-visited">${tab.lastVisited ? new Date(tab.lastVisited).toLocaleString("en-US", { 
-                month: "2-digit",
-                day: "2-digit",
-                hour: "numeric",
-                minute: "2-digit",
-                second: "2-digit",
-                hour12: true
-            }) : "--"}</td>
-        `;
+        // @TODO: make this cleaner... too tired maybe tomorrow
+        if (this.detailedRows) {
+            row.innerHTML = `
+                <td class="tab-title"><span>${ duplicate }<span>${ tab.favIconUrl ? `<img src="${tab.favIconUrl}" class="tab-favicon" />` : "" } ${tab.title}</span></span><span class="tab-url">${tab.url}</span></td> 
+                <td class="tab-last-visited">${tab.lastVisited ? new Date(tab.lastVisited).toLocaleString("en-US", { 
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: true
+                }) : "--"}</td>
+            `;
+        } else {
+            row.innerHTML = `
+                <td class="tab-title"><span>${ duplicate }<span>${ tab.favIconUrl ? `<img src="${tab.favIconUrl}" class="tab-favicon" />` : "" } ${tab.title}</span></span></td> 
+                <td class="tab-last-visited">${tab.lastVisited ? new Date(tab.lastVisited).toLocaleString("en-US", { 
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: true
+                }) : "--"}</td>
+            `;
+
+        }
         return row;
     }
 

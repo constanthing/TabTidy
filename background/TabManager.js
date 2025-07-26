@@ -26,6 +26,7 @@ export default class TabManager {
 
     async removeTab(tabId, addToClosedTabs = true) {
         const removedTab = await Database.removeTab(tabId);
+        console.log("[INFO] removedTab", removedTab);
 
         if (removedTab) {
             // no need on adding chrome:// tabs to closed tabs

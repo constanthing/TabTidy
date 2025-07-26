@@ -2,6 +2,8 @@
 let SYSTEM_GROUP_BY_WINDOW = false; 
 let SYSTEM_FILTER_BY_LLMS = false;
 let SYSTEM_HISTORY_VIEW = false;
+let SYSTEM_DETAILED_ROWS = false;
+let SYSTEM_ALWAYS_SHOW_CLOSED_TABS = false;
 
 import PopupManager from "./PopupManager.js";
 import TabManager from "../../background/TabManager.js";
@@ -10,12 +12,18 @@ const tabManager = new TabManager();
 let popupManager = null;
 
 
-document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener("startupComplete", async () => {
+    // SET SYSTEM SETTINGS
     SYSTEM_GROUP_BY_WINDOW = await tabManager.getSystemSetting("groupByWindow");
+    SYSTEM_DETAILED_ROWS = await tabManager.getSystemSetting("detailedRows");
+    SYSTEM_ALWAYS_SHOW_CLOSED_TABS = await tabManager.getSystemSetting("alwaysShowClosedTabs");
     SYSTEM_FILTER_BY_LLMS = await tabManager.getSystemSetting("filterByLLMs");
     SYSTEM_HISTORY_VIEW = await tabManager.getSystemSetting("historyView");
+    SYSTEM_DETAILED_ROWS = await tabManager.getSystemSetting("detailedRows");
 
     popupManager = await new PopupManager();
+
+    popupManager.detailedRows = SYSTEM_DETAILED_ROWS;
 
     // Initial Load of Tabs
     await popupManager.loadTabs();
