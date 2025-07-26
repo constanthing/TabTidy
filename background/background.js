@@ -166,7 +166,7 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
         return;
     }
     console.log("[INFO] onRemoved", tabId, removeInfo);
-    await tabManager.removeTab(tabId);
+    await tabManager.removeTab(tabId, true);
     await tabManager.setBadgeLength();
     await chrome.tabs.query({ active: true }, async function (tabs) {
         if (tabs.length > 0) {
@@ -230,6 +230,13 @@ async function identifyWindow(window) {
     const tabs = await chrome.tabs.query({windowId: window.id})
 
     if (await tabManager.getSystemSetting("newSession") || newSession) {
+        // remove all last sessions (these are old that were created before this new session)
+        // const lastSessions = await tabManager.getAllLastSessions();
+        // console.log("[LAST SESSIONS] old last sessions", lastSessions, lastSessions.length);
+        // for (const lastSession of lastSessions) {
+        //     await tabManager.removeLastSession(lastSession.index);
+        // }
+
         // check for any existing windows/tabs and move to lastSession
         const windows = await tabManager.getAllWindows();
 
@@ -249,7 +256,9 @@ async function identifyWindow(window) {
 
         const tabs = await tabManager.getAllTabs();
         for (const tab of tabs) {
-            await tabManager.removeTab(tab.id);
+            // we don't want to add these tabs to closed tabs
+            // because they are not closed by the user, but by the system
+            await tabManager.removeTab(tab.id, false);
         }
 
         console.log("[LAST SESSIONS] last sessions", await tabManager.getAllLastSessions());

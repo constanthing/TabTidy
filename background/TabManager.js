@@ -24,7 +24,7 @@ export default class TabManager {
         return await Database.getLastTab();
     }
 
-    async removeTab(tabId) {
+    async removeTab(tabId, addToClosedTabs = true) {
         const removedTab = await Database.removeTab(tabId);
 
         if (removedTab) {
@@ -32,7 +32,9 @@ export default class TabManager {
             if (removedTab.url.includes("chrome://")) {
                 return;
             }
-            await Database.addTabToClosedTabs(removedTab);
+            if (addToClosedTabs) {
+                await Database.addTabToClosedTabs(removedTab);
+            }
         } else {
             console.log("[INFO] tab not found in removeTab()", tabId);
         }
